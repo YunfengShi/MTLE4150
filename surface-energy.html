@@ -187,7 +187,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     mats.dangle = std(css("--accent"), { emissive: new THREE.Color(css("--accent")), emissiveIntensity: 0.25 });
     mats.cell = new THREE.LineBasicMaterial({ color: css("--muted"), transparent: true, opacity: 0.6 });
     mats.cell2dLine = new THREE.LineBasicMaterial({ color: css("--cell2d"), depthTest: false, transparent: true });
-    mats.cell2dFill = new THREE.MeshBasicMaterial({ color: css("--cell2d"), transparent: true, opacity: 0.22,
+    mats.cell2dFill = new THREE.MeshBasicMaterial({ color: css("--cell2d"), transparent: true, opacity: 0.55,
       side: THREE.DoubleSide, depthWrite: false });
     C.fg = css("--fg"); C.muted = css("--muted");
     renderer.setClearColor(new THREE.Color(css("--scene")), 1);
@@ -283,6 +283,17 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     const fill = new THREE.Mesh(fillG, mats.cell2dFill);
     fill.renderOrder = 4;
     g.add(fill, line);
+    // the two primitive vectors a1 and a2, drawn from the shared corner
+    [[c[1], "a1"], [c[3], "a2"]].forEach(([tip, t]) => {
+      const v = tip.clone().sub(c[0]), len = v.length();
+      const arrow = new THREE.ArrowHelper(v.clone().normalize(), c[0], len, new THREE.Color(C.fg),
+        Math.min(0.16, len * 0.25), Math.min(0.09, len * 0.14));
+      arrow.traverse(o => { if (o.material) { o.material.depthTest = false; o.material.transparent = true; } o.renderOrder = 8; });
+      g.add(arrow);
+      const l = label(t, 0.2);
+      l.position.copy(c[0]).addScaledVector(v, 0.55).addScaledVector(NORMAL, 0.12);
+      g.add(l);
+    });
     return g;
   }
   function build() {
