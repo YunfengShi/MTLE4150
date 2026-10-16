@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MTLE 4150 · Interactive Models</title>
+<meta name="description" content="Interactive 3D models for MTLE 4150 by Professor Yunfeng Shi, Rensselaer Polytechnic Institute.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a single drafting sheet — course title block on top, a grid of model cards below. */
+:root{
+  --paper:#f7f9fb; --sheet:#ffffff; --ink:#18232e; --muted:#5a6876; --rule:#d8e0e7;
+  --grid:rgba(47,111,159,.07); --accent:#b3102b; --link:#2f6f9f;
+  --display:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#11171d; --sheet:#182029; --ink:#e4eaf0; --muted:#9aa8b5; --rule:#2c3946;
+    --grid:rgba(120,170,210,.06); --accent:#ff5a6e; --link:#7fb6e0; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#11171d; --sheet:#182029; --ink:#e4eaf0; --muted:#9aa8b5; --rule:#2c3946;
+  --grid:rgba(120,170,210,.06); --accent:#ff5a6e; --link:#7fb6e0; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{background:var(--paper)}
+body{margin:0;color:var(--ink);font:16px/1.6 var(--body);
+  background-color:var(--paper);
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:24px 24px}
+.wrap{max-width:1040px;margin:0 auto;padding-inline:20px;padding-block:48px 40px}
+
+header{display:grid;gap:10px;padding-bottom:28px;border-bottom:2px solid var(--ink)}
+.code{font:500 14px var(--mono);letter-spacing:.08em;color:var(--accent)}
+h1{margin:0;font:700 clamp(32px,6vw,54px)/1.05 var(--display);letter-spacing:-.01em;text-wrap:balance}
+.byline{margin:0;color:var(--muted);font-size:17px}
+.byline strong{color:var(--ink);font-weight:600}
+.intro{margin:6px 0 0;max-width:62ch}
+
+h2{margin:36px 0 16px;font:600 13px var(--body);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.models{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,310px),1fr));gap:20px;
+  list-style:none;margin:0;padding:0}
+
+.card{display:flex;flex-direction:column;min-width:0;background:var(--sheet);border:1px solid var(--rule);
+  border-radius:8px;overflow:hidden;color:inherit;text-decoration:none;transition:border-color .15s,transform .15s}
+.card:hover{border-color:var(--link);transform:translateY(-2px)}
+.card:focus-visible{outline:3px solid var(--link);outline-offset:3px}
+.thumb{display:block;width:100%;height:auto;max-width:100%;aspect-ratio:66/62;object-fit:cover;background:#fbfcfd;border-bottom:1px solid var(--rule)}
+.body{display:grid;gap:8px;padding:16px 18px 18px}
+.tags{display:flex;flex-wrap:wrap;gap:6px}
+.tag{font:500 11.5px var(--mono);letter-spacing:.04em;color:var(--muted);border:1px solid var(--rule);border-radius:4px;padding:1px 7px}
+.card h3{margin:0;font:600 21px/1.25 var(--display);text-wrap:balance}
+.card p{margin:0;color:var(--muted);font-size:15px}
+.open{margin-top:4px;color:var(--link);font-weight:600;font-size:15px}
+
+footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--rule);color:var(--muted);font-size:13.5px}
+@media (prefers-reduced-motion: reduce){.card{transition:none}.card:hover{transform:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="code">Materials Science and Engineering</div>
+    <h1>MTLE 4150</h1>
+    <p class="byline">Professor <strong>Yunfeng Shi</strong> · Rensselaer Polytechnic Institute</p>
+    <p class="intro">Interactive 3D models for the course. Each one opens in any web browser, on a laptop or a phone, with nothing to install. Drag to rotate, scroll or pinch to zoom.</p>
+  </header>
+
+  <h2>Interactive models</h2>
+  <ul class="models">
+
+    <li>
+      <a class="card" href="surface-energy.html">
+        <img class="thumb" src="surface-energy.jpg" alt="An FCC crystal split along (110), with the broken bonds on both new surfaces shown in red" width="990" height="930" loading="lazy">
+        <div class="body">
+          <div class="tags"><span class="tag">Surfaces</span><span class="tag">Broken-bond model</span><span class="tag">Crystal structure</span></div>
+          <h3>Surface Energy for Simple Single-component Metals</h3>
+          <p>Cleave an SC, BCC or FCC crystal along (100), (110) or (111). Pull the halves apart and every bond that crossed the cut turns into a red dangling bond.</p>
+          <span class="open">Open model →</span>
+        </div>
+      </a>
+    </li>
+
+    <!--
+      TO ADD A NEW MODEL: copy everything from <li> to </li> above, paste it here,
+      and change four things:
+        href="surface-energy.html"   → the new page's file name
+        src="surface-energy.jpg"     → its preview image (and the alt text)
+        the tags, the <h3> title and the <p> description
+      Then upload the new .html and .jpg files next to this index.html.
+    -->
+
+  </ul>
+
+  <footer>MTLE 4150 · Materials Science and Engineering · Rensselaer Polytechnic Institute</footer>
+</div>
+</body>
+</html>

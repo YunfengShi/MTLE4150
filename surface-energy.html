@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Surface Energy for Simple Single-component Metals</title>
+<meta name="description" content="Cleave an SC, BCC or FCC crystal along (100), (110) or (111) and see which bonds break. MTLE 4150, Professor Yunfeng Shi, RPI.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,600&display=swap">
+<style>
+/* Layout: the 3D crystal fills the bench; three controls sit in one strip under it */
+:root {
+  --bg: #eef1f4;
+  --panel: #fbfcfd;
+  --fg: #18212c;
+  --muted: #5a6574;
+  --line: #d5dbe3;
+  --accent: #d0381c;      /* dangling bonds */
+  --atom: #c6a23a;
+  --bond: #8d97a6;
+  --scene: #f7f8fa;
+  --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f141b; --panel: #161d26; --fg: #e5eaf0; --muted: #96a2b2; --line: #29323e;
+    --accent: #ff6a3d; --atom: #c9a64a; --bond: #7a8596; --scene: #121821;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f141b; --panel: #161d26; --fg: #e5eaf0; --muted: #96a2b2; --line: #29323e;
+  --accent: #ff6a3d; --atom: #c9a64a; --bond: #7a8596; --scene: #121821;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 28px;
+}
+.wrap { max-width: 1100px; margin: 0 auto; display: grid; gap: 14px; }
+.code { font: 500 13px var(--font-mono); letter-spacing: .08em; color: var(--accent); }
+.sub { margin: 0; color: var(--muted); font-size: 16px; }
+h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(26px, 3.4vw, 34px); line-height: 1.1; margin: 0; text-wrap: balance; }
+.stage { position: relative; background: var(--scene); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  height: min(70vh, 660px); min-height: 360px; touch-action: none; }
+.stage canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+.stage canvas:active { cursor: grabbing; }
+.hint { position: absolute; left: 12px; bottom: 10px; font-size: 12px; color: var(--muted); pointer-events: none; }
+.controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 24px; align-items: end;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+@media (max-width: 760px) { .controls { grid-template-columns: minmax(0, 1fr); } }
+.checks { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 22px; }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field label { font-size: 13.5px; display: flex; justify-content: space-between; gap: 8px; }
+.field output { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.check { display: flex; align-items: center; gap: 9px; font-size: 13.5px; cursor: pointer; padding-bottom: 4px; }
+.check input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fallback { padding: 24px; color: var(--muted); }
+.pickers { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px 28px; }
+.seg { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; border: 0; margin: 0; padding: 0; }
+.seg legend { float: left; font-size: 13.5px; margin-right: 6px; padding: 0; }
+.seg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.seg span { display: inline-block; font: 500 13px/1 var(--font-body); padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; background: var(--panel); }
+.seg input:checked + span { background: var(--fg); color: var(--panel); border-color: var(--fg); }
+.seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header style="display:grid;gap:4px">
+    <div class="code">MTLE 4150</div>
+    <h1>Surface Energy for Simple Single-component Metals</h1>
+    <p class="sub" id="title">Cleaving an FCC crystal along (110)</p>
+  </header>
+
+  <div class="stage" id="stage">
+    <div class="hint">Drag to rotate · scroll to zoom · x, y, z along the cube edges</div>
+  </div>
+
+  <div class="controls">
+    <div class="pickers">
+      <fieldset class="seg">
+        <legend>Lattice</legend>
+        <label><input type="radio" name="lat" value="sc"><span>SC</span></label>
+        <label><input type="radio" name="lat" value="bcc"><span>BCC</span></label>
+        <label><input type="radio" name="lat" value="fcc" checked><span>FCC</span></label>
+      </fieldset>
+      <fieldset class="seg">
+        <legend>Surface</legend>
+        <label><input type="radio" name="hkl" value="100"><span>(100)</span></label>
+        <label><input type="radio" name="hkl" value="110" checked><span>(110)</span></label>
+        <label><input type="radio" name="hkl" value="111"><span>(111)</span></label>
+      </fieldset>
+    </div>
+    <div class="field">
+      <label for="sep"><span id="sepLabel">Separation along [110]</span> <output id="sepOut">0.60 a</output></label>
+      <input type="range" id="sep" min="0" max="1.6" step="0.01" value="0.6">
+    </div>
+    <div class="field">
+      <label for="cut">Cut position <output id="cutOut"></output></label>
+      <input type="range" id="cut" min="1" max="6" step="1" value="3">
+    </div>
+    <div class="field">
+      <label for="rep">Replication <output id="repOut">2 × 2 × 2 cells</output></label>
+      <input type="range" id="rep" min="1" max="4" step="1" value="2">
+    </div>
+    <div class="checks">
+      <label class="check"><input type="checkbox" id="showCell" checked> Conventional unit cells</label>
+      <label class="check"><input type="checkbox" id="showDangle" checked> Dangling bonds</label>
+      <label class="check"><input type="checkbox" id="hideIntact"> Hide intact bonds</label>
+      <label class="check"><input type="checkbox" id="hideUpper"> Hide the separated upper part</label>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  const stage = document.getElementById("stage");
+  if (!window.THREE) { stage.insertAdjacentHTML("afterbegin", '<p class="fallback">The 3D viewer could not load. Reload the page to try again.</p>'); return; }
+  let renderer;
+  try { renderer = new THREE.WebGLRenderer({ antialias: true }); }
+  catch (e) { stage.insertAdjacentHTML("afterbegin", '<p class="fallback">This browser has WebGL turned off, so the crystal cannot be drawn.</p>'); return; }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  stage.insertBefore(renderer.domElement, stage.firstChild);
+
+  let N = 2;                         // N x N x N conventional cells, a = 1
+  const LAT = {
+    sc:  { name: "a simple cubic", nn: 1,                site: (i, j, k) => i % 2 === 0 && j % 2 === 0 && k % 2 === 0 },
+    bcc: { name: "a BCC",          nn: Math.sqrt(3) / 2, site: (i, j, k) => (i % 2) === (j % 2) && (j % 2) === (k % 2) },
+    fcc: { name: "an FCC",         nn: Math.SQRT1_2,     site: (i, j, k) => (i + j + k) % 2 === 0 },
+  };
+  const Y = new THREE.Vector3(0, 1, 0);
+  const state = { lat: "fcc", hkl: [1, 1, 0], gap: 2, sep: 0.6, hideIntact: false, hideUpper: false, showCell: true, showDangle: true };
+  let NORMAL = new THREE.Vector3(1, 1, 0).normalize();
+  let BREAK = 1.1 * LAT.fcc.nn;      // a bond stretched past this is broken
+  let layers = [], cutC = 0;
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 100);
+  camera.up.set(0, 0, 1);
+  scene.add(camera);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.55));
+  const key = new THREE.DirectionalLight(0xffffff, 0.75);
+  key.position.set(1.5, 2, 3);
+  camera.add(key);
+
+  const geoAtom = new THREE.SphereGeometry(0.15, 28, 18);
+  const geoBond = new THREE.CylinderGeometry(0.03, 0.03, 1, 10, 1);
+  const geoDangle = new THREE.CylinderGeometry(0.05, 0.05, 1, 12, 1);
+
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const mats = {};
+  const C = {};
+  function makeMaterials() {
+    Object.values(mats).forEach(m => m.dispose());
+    const std = (c, extra) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.45, metalness: 0.15 }, extra || {}));
+    mats.atom = std(css("--atom"));
+    mats.bond = std(css("--bond"), { roughness: 0.7 });
+    mats.dangle = std(css("--accent"), { emissive: new THREE.Color(css("--accent")), emissiveIntensity: 0.25 });
+    mats.cell = new THREE.LineBasicMaterial({ color: css("--muted"), transparent: true, opacity: 0.6 });
+    C.fg = css("--fg"); C.muted = css("--muted");
+    renderer.setClearColor(new THREE.Color(css("--scene")), 1);
+  }
+
+  function placeRod(mesh, a, b) {
+    const d = new THREE.Vector3().subVectors(b, a);
+    const len = d.length();
+    mesh.position.copy(a).addScaledVector(d, 0.5);
+    mesh.quaternion.setFromUnitVectors(Y, d.divideScalar(len || 1));
+    mesh.scale.set(1, len, 1);
+  }
+
+  const proj = p => state.hkl[0] * p.x + state.hkl[1] * p.y + state.hkl[2] * p.z;
+
+  // lattice, nearest-neighbour bonds and the list of atomic planes along [hkl]
+  let atoms = [], bonds = [];
+  function makeLattice() {
+    const L = LAT[state.lat], nn2 = L.nn * L.nn;
+    NORMAL = new THREE.Vector3(...state.hkl).normalize();
+    BREAK = 1.1 * L.nn;
+    atoms = []; bonds = [];
+    for (let i = 0; i <= 2 * N; i++) for (let j = 0; j <= 2 * N; j++) for (let k = 0; k <= 2 * N; k++)
+      if (L.site(i, j, k)) {
+        const p = new THREE.Vector3(i / 2, j / 2, k / 2);
+        atoms.push({ p, s: Math.round(proj(p) * 1e6) / 1e6 });
+      }
+    for (let a = 0; a < atoms.length; a++) for (let b = a + 1; b < atoms.length; b++)
+      if (Math.abs(atoms[a].p.distanceToSquared(atoms[b].p) - nn2) < 1e-6) bonds.push({ a, b });
+    layers = [...new Set(atoms.map(a => a.s))].sort((x, y) => x - y);
+  }
+  function setCut() {
+    state.gap = Math.max(0, Math.min(layers.length - 2, state.gap));
+    cutC = (layers[state.gap] + layers[state.gap + 1]) / 2;
+    atoms.forEach(at => at.upper = at.s > cutC);
+  }
+
+  function label(text, h) {
+    const cv = document.createElement("canvas"), ctx = cv.getContext("2d"), fs = 64;
+    ctx.font = `600 ${fs}px "IBM Plex Mono", ui-monospace, monospace`;
+    const w = Math.ceil(ctx.measureText(text).width) + 20;
+    cv.width = w; cv.height = fs + 20;
+    ctx.font = `600 ${fs}px "IBM Plex Mono", ui-monospace, monospace`;
+    ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(text, w / 2, cv.height / 2 + 2);
+    const tex = new THREE.CanvasTexture(cv); tex.minFilter = THREE.LinearFilter;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+    sp.scale.set(h * w / cv.height, h, 1); sp.renderOrder = 10;
+    return sp;
+  }
+
+  let root, cellLines;
+  function build() {
+    if (root) {
+      scene.remove(root);
+      root.traverse(o => { if (o.isSprite) { o.material.map.dispose(); o.material.dispose(); } if (o.isLineSegments) o.geometry.dispose(); });
+    }
+    root = new THREE.Group();
+    scene.add(root);
+    setCut();
+    atoms.forEach(at => {
+      at.mesh = new THREE.Mesh(geoAtom, mats.atom);
+      root.add(at.mesh);
+    });
+    bonds.forEach(bd => {
+      bd.whole = new THREE.Mesh(geoBond, mats.bond);
+      bd.stubA = new THREE.Mesh(geoDangle, mats.dangle);
+      bd.stubB = new THREE.Mesh(geoDangle, mats.dangle);
+      root.add(bd.whole, bd.stubA, bd.stubB);
+    });
+    // x, y, z axes from a corner just outside the block
+    const o = new THREE.Vector3(-0.45, -0.45, -0.45);
+    const len = Math.max(0.8, 0.45 * N);
+    [[1, 0, 0, "x"], [0, 1, 0, "y"], [0, 0, 1, "z"]].forEach(([x, y, z, t]) => {
+      const d = new THREE.Vector3(x, y, z);
+      root.add(new THREE.ArrowHelper(d, o, len, new THREE.Color(C.fg), 0.16, 0.09));
+      const l = label(t, 0.22);
+      l.position.copy(o).addScaledVector(d, len + 0.18);
+      root.add(l);
+    });
+    cellLines = new THREE.LineSegments(new THREE.BufferGeometry(), mats.cell);
+    root.add(cellLines);
+    update();
+  }
+
+  function pos(at) { return at.upper ? at.p.clone().addScaledVector(NORMAL, state.sep) : at.p.clone(); }
+
+  function update() {
+    atoms.forEach(at => { at.mesh.position.copy(pos(at)); at.mesh.visible = !(state.hideUpper && at.upper); });
+    bonds.forEach(bd => {
+      const A = pos(atoms[bd.a]), B = pos(atoms[bd.b]);
+      const broken = A.distanceTo(B) > BREAK;
+      const upA = atoms[bd.a].upper, upB = atoms[bd.b].upper, hu = state.hideUpper;
+      bd.whole.visible = !broken && !state.hideIntact && !(hu && (upA || upB));
+      bd.stubA.visible = broken && state.showDangle && !(hu && upA);
+      bd.stubB.visible = broken && state.showDangle && !(hu && upB);
+      if (broken) {
+        // each atom keeps half of its original bond, pointing where the partner used to be
+        const d = new THREE.Vector3().subVectors(atoms[bd.b].p, atoms[bd.a].p).multiplyScalar(0.5);
+        placeRod(bd.stubA, A, A.clone().add(d));
+        placeRod(bd.stubB, B, B.clone().sub(d));
+      } else {
+        placeRod(bd.whole, A, B);
+      }
+    });
+    updateCells();
+    document.getElementById("sepOut").textContent = state.sep.toFixed(2) + " a";
+    const expr = ["x", "y", "z"].filter((_, i) => state.hkl[i]).join(" + ");
+    const f = v => (+v.toFixed(2)).toString();
+    document.getElementById("cutOut").textContent = `between ${expr} = ${f(layers[state.gap])}a and ${f(layers[state.gap + 1])}a`;
+    render();
+  }
+
+  // conventional cell edges, split at the cut so each piece moves with its half
+  function updateCells() {
+    cellLines.visible = state.showCell;
+    if (!state.showCell) return;
+    const c = cutC, shift = NORMAL.clone().multiplyScalar(state.sep), pts = [];
+    const push = (a, b) => {
+      const up = (proj(a) + proj(b)) / 2 > c;
+      if (up && state.hideUpper) return;
+      const s = up ? shift : new THREE.Vector3();
+      pts.push(a.x + s.x, a.y + s.y, a.z + s.z, b.x + s.x, b.y + s.y, b.z + s.z);
+    };
+    const seg = (a, b) => {
+      const fa = proj(a) - c, fb = proj(b) - c;
+      if (fa * fb < 0) { const m = a.clone().lerp(b, fa / (fa - fb)); push(a, m); push(m, b); }
+      else push(a, b);
+    };
+    for (let u = 0; u <= N; u++) for (let v = 0; v <= N; v++) {
+      seg(new THREE.Vector3(0, u, v), new THREE.Vector3(N, u, v));
+      seg(new THREE.Vector3(u, 0, v), new THREE.Vector3(u, N, v));
+      seg(new THREE.Vector3(u, v, 0), new THREE.Vector3(u, v, N));
+    }
+    cellLines.geometry.dispose();
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+    cellLines.geometry = g;
+  }
+
+  // camera: orthographic orbit around the block
+  const cam = { theta: Math.atan2(-1.0, 0.55), phi: Math.acos(0.62 / Math.hypot(0.55, 1, 0.62)), zoom: 1 };
+  function render() {
+    const target = new THREE.Vector3(N / 2, N / 2, N / 2).addScaledVector(NORMAL, state.sep / 2);
+    const r = 20, s = Math.sin(cam.phi);
+    camera.position.set(target.x + r * s * Math.cos(cam.theta), target.y + r * s * Math.sin(cam.theta), target.z + r * Math.cos(cam.phi));
+    camera.lookAt(target);
+    const w = stage.clientWidth, h = Math.max(stage.clientHeight, 1);
+    const half = (N * 1.05 + 0.8) / cam.zoom, aspect = w / h;
+    if (aspect >= 1) { camera.left = -half * aspect; camera.right = half * aspect; camera.top = half; camera.bottom = -half; }
+    else { camera.left = -half; camera.right = half; camera.top = half / aspect; camera.bottom = -half / aspect; }
+    camera.updateProjectionMatrix();
+    renderer.render(scene, camera);
+  }
+  new ResizeObserver(() => { renderer.setSize(stage.clientWidth, stage.clientHeight, false); render(); }).observe(stage);
+
+  const el = renderer.domElement;
+  let drag = null;
+  el.addEventListener("pointerdown", e => { drag = { x: e.clientX, y: e.clientY, t: cam.theta, p: cam.phi }; el.setPointerCapture(e.pointerId); });
+  el.addEventListener("pointermove", e => {
+    if (!drag) return;
+    cam.theta = drag.t - (e.clientX - drag.x) * 0.008;
+    cam.phi = Math.min(Math.PI - 0.05, Math.max(0.05, drag.p - (e.clientY - drag.y) * 0.008));
+    render();
+  });
+  el.addEventListener("pointerup", () => { drag = null; });
+  el.addEventListener("wheel", e => { e.preventDefault(); cam.zoom = Math.min(4, Math.max(0.5, cam.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1))); render(); }, { passive: false });
+
+  const sepIn = document.getElementById("sep");
+  sepIn.addEventListener("input", () => { state.sep = +sepIn.value; update(); });
+  const cutIn = document.getElementById("cut");
+  cutIn.addEventListener("input", () => { state.gap = +cutIn.value - 1; setCut(); update(); });
+
+  // rebuild after a change of lattice, surface or block size; the cut goes back to the middle
+  function rebuild() {
+    makeLattice();
+    state.gap = Math.floor((layers.length - 2) / 2);
+    cutIn.min = 1; cutIn.max = layers.length - 1; cutIn.value = state.gap + 1;
+    const h = state.hkl.join("");
+    document.getElementById("title").textContent = `Cleaving ${LAT[state.lat].name} crystal along (${h})`;
+    document.getElementById("sepLabel").textContent = `Separation along [${h}]`;
+    build();
+  }
+  document.querySelectorAll('input[name="lat"]').forEach(r => r.addEventListener("change", () => { state.lat = r.value; rebuild(); }));
+  document.querySelectorAll('input[name="hkl"]').forEach(r => r.addEventListener("change", () => { state.hkl = r.value.split("").map(Number); rebuild(); }));
+  const hide = document.getElementById("hideIntact");
+  hide.addEventListener("change", () => { state.hideIntact = hide.checked; update(); });
+  const cellIn = document.getElementById("showCell");
+  cellIn.addEventListener("change", () => { state.showCell = cellIn.checked; update(); });
+  const upIn = document.getElementById("hideUpper");
+  upIn.addEventListener("change", () => { state.hideUpper = upIn.checked; update(); });
+  const dangIn = document.getElementById("showDangle");
+  dangIn.addEventListener("change", () => { state.showDangle = dangIn.checked; update(); });
+  const repIn = document.getElementById("rep");
+  repIn.addEventListener("input", () => {
+    N = +repIn.value;
+    document.getElementById("repOut").textContent = `${N} × ${N} × ${N} cell${N > 1 ? "s" : ""}`;
+    rebuild();
+  });
+
+  function retheme() { makeMaterials(); build(); }
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", retheme);
+  new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+  makeMaterials();
+  rebuild();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => build());
+})();
+</script>
+</body>
+</html>
