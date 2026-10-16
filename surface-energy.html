@@ -20,6 +20,7 @@
   --atom: #c6a23a;
   --bond: #8d97a6;
   --scene: #f7f8fa;
+  --cell2d: #1f6fb2;      /* 2D surface unit cell */
   --font-display: "Newsreader", Georgia, "Times New Roman", serif;
   --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
@@ -27,13 +28,13 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0f141b; --panel: #161d26; --fg: #e5eaf0; --muted: #96a2b2; --line: #29323e;
-    --accent: #ff6a3d; --atom: #c9a64a; --bond: #7a8596; --scene: #121821;
+    --accent: #ff6a3d; --atom: #c9a64a; --bond: #7a8596; --scene: #121821; --cell2d: #5aa9ec;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0f141b; --panel: #161d26; --fg: #e5eaf0; --muted: #96a2b2; --line: #29323e;
-  --accent: #ff6a3d; --atom: #c9a64a; --bond: #7a8596; --scene: #121821;
+  --accent: #ff6a3d; --atom: #c9a64a; --bond: #7a8596; --scene: #121821; --cell2d: #5aa9ec;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -53,9 +54,10 @@ h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(26px, 
 .stage canvas { display: block; width: 100%; height: 100%; cursor: grab; }
 .stage canvas:active { cursor: grabbing; }
 .hint { position: absolute; left: 12px; bottom: 10px; font-size: 12px; color: var(--muted); pointer-events: none; }
-.controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 24px; align-items: end;
+.controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px 24px; align-items: end;
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
-@media (max-width: 760px) { .controls { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 900px) { .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .controls { grid-template-columns: minmax(0, 1fr); } }
 .checks { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 22px; }
 .field { display: grid; gap: 4px; min-width: 0; }
 .field label { font-size: 13.5px; display: flex; justify-content: space-between; gap: 8px; }
@@ -72,6 +74,11 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .seg span { display: inline-block; font: 500 13px/1 var(--font-body); padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; background: var(--panel); }
 .seg input:checked + span { background: var(--fg); color: var(--panel); border-color: var(--fg); }
 .seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.btn { font: 600 13px/1 var(--font-body); padding: 9px 14px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
+.btn.primary { background: var(--fg); color: var(--panel); border-color: var(--fg); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 </style>
 </head>
 <body>
@@ -84,7 +91,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   </header>
 
   <div class="stage" id="stage">
-    <div class="hint">Drag to rotate · scroll to zoom · x, y, z along the cube edges</div>
+    <div class="hint">Drag to rotate · scroll or slider to zoom · axes x, y, z have length a</div>
   </div>
 
   <div class="controls">
@@ -114,8 +121,17 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       <label for="rep">Replication <output id="repOut">2 × 2 × 2 cells</output></label>
       <input type="range" id="rep" min="1" max="4" step="1" value="2">
     </div>
+    <div class="field">
+      <label for="zoom">Zoom <output id="zoomOut">1.0×</output></label>
+      <input type="range" id="zoom" min="0.5" max="4" step="0.05" value="1">
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="showSurf" type="button">Show cleaved surface</button>
+      <button class="btn" id="view3d" type="button">Back to 3D view</button>
+    </div>
     <div class="checks">
       <label class="check"><input type="checkbox" id="showCell" checked> Conventional unit cells</label>
+      <label class="check"><input type="checkbox" id="show2d"> 2D unit cell on the cleaved surface</label>
       <label class="check"><input type="checkbox" id="showDangle" checked> Dangling bonds</label>
       <label class="check"><input type="checkbox" id="hideIntact"> Hide intact bonds</label>
       <label class="check"><input type="checkbox" id="hideUpper"> Hide the separated upper part</label>
@@ -141,7 +157,8 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     fcc: { name: "an FCC",         nn: Math.SQRT1_2,     site: (i, j, k) => (i + j + k) % 2 === 0 },
   };
   const Y = new THREE.Vector3(0, 1, 0);
-  const state = { lat: "fcc", hkl: [1, 1, 0], gap: 2, sep: 0.6, hideIntact: false, hideUpper: false, showCell: true, showDangle: true };
+  const state = { lat: "fcc", hkl: [1, 1, 0], gap: 2, sep: 0.6, hideIntact: false, hideUpper: false, showCell: true, showDangle: true, show2d: false };
+  const target = new THREE.Vector3();
   let NORMAL = new THREE.Vector3(1, 1, 0).normalize();
   let BREAK = 1.1 * LAT.fcc.nn;      // a bond stretched past this is broken
   let layers = [], cutC = 0;
@@ -169,6 +186,9 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     mats.bond = std(css("--bond"), { roughness: 0.7 });
     mats.dangle = std(css("--accent"), { emissive: new THREE.Color(css("--accent")), emissiveIntensity: 0.25 });
     mats.cell = new THREE.LineBasicMaterial({ color: css("--muted"), transparent: true, opacity: 0.6 });
+    mats.cell2dLine = new THREE.LineBasicMaterial({ color: css("--cell2d"), depthTest: false, transparent: true });
+    mats.cell2dFill = new THREE.MeshBasicMaterial({ color: css("--cell2d"), transparent: true, opacity: 0.22,
+      side: THREE.DoubleSide, depthWrite: false });
     C.fg = css("--fg"); C.muted = css("--muted");
     renderer.setClearColor(new THREE.Color(css("--scene")), 1);
   }
@@ -219,7 +239,52 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     return sp;
   }
 
-  let root, cellLines;
+  let root, cellLines, cell2d;
+
+  // primitive 2D cell of the top atomic plane of the lower part: the two shortest
+  // non-parallel in-plane lattice vectors, placed where all four corners are atoms in the block
+  function make2dCell() {
+    const sTop = layers[state.gap];
+    const top = atoms.filter(a => a.s === sTop);
+    if (top.length < 3) return null;
+    const key = p => `${Math.round(p.x * 2)},${Math.round(p.y * 2)},${Math.round(p.z * 2)}`;
+    const have = new Set(top.map(a => key(a.p)));
+    const vecs = [];                       // every in-plane translation present in this layer
+    for (let i = 0; i < top.length; i++) for (let j = 0; j < top.length; j++) {
+      const v = top[j].p.clone().sub(top[i].p);
+      if (v.lengthSq() > 1e-9) vecs.push(v);
+    }
+    vecs.sort((u, v) => u.lengthSq() - v.lengthSq());
+    const v1 = vecs[0];
+    let v2 = null;
+    for (const v of vecs) {
+      if (v.clone().cross(v1).lengthSq() < 1e-9) continue;
+      if (!v2 || v.lengthSq() < v2.lengthSq() - 1e-9 || (Math.abs(v.lengthSq() - v2.lengthSq()) < 1e-9 && v.dot(v1) > v2.dot(v1))) v2 = v;
+    }
+    if (!v2) return null;
+    const centre = top.reduce((c, a) => c.add(a.p), new THREE.Vector3()).divideScalar(top.length);
+    let best = null, bestD = Infinity;
+    for (const a of top) for (const s1 of [1, -1]) for (const s2 of [1, -1]) {
+      const A = v1.clone().multiplyScalar(s1), B = v2.clone().multiplyScalar(s2);
+      const c = [a.p, a.p.clone().add(A), a.p.clone().add(A).add(B), a.p.clone().add(B)];
+      // prefer cells whose four corners are all atoms of the block, then the one nearest the middle
+      const miss = c.filter(p => !have.has(key(p))).length;
+      const d = miss * 100 + c.reduce((m, p) => m.add(p), new THREE.Vector3()).multiplyScalar(0.25).distanceToSquared(centre);
+      if (d < bestD - 1e-9) { bestD = d; best = c; }
+    }
+    if (!best) return null;
+    const lift = NORMAL.clone().multiplyScalar(0.02);
+    const c = best.map(p => p.clone().add(lift));
+    const g = new THREE.Group();
+    const lineG = new THREE.BufferGeometry().setFromPoints([...c, c[0]]);
+    const line = new THREE.Line(lineG, mats.cell2dLine);
+    line.renderOrder = 5;
+    const fillG = new THREE.BufferGeometry().setFromPoints([c[0], c[1], c[2], c[0], c[2], c[3]]);
+    const fill = new THREE.Mesh(fillG, mats.cell2dFill);
+    fill.renderOrder = 4;
+    g.add(fill, line);
+    return g;
+  }
   function build() {
     if (root) {
       scene.remove(root);
@@ -240,7 +305,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     });
     // x, y, z axes from a corner just outside the block
     const o = new THREE.Vector3(-0.45, -0.45, -0.45);
-    const len = Math.max(0.8, 0.45 * N);
+    const len = 1;                       // axis length = lattice constant a
     [[1, 0, 0, "x"], [0, 1, 0, "y"], [0, 0, 1, "z"]].forEach(([x, y, z, t]) => {
       const d = new THREE.Vector3(x, y, z);
       root.add(new THREE.ArrowHelper(d, o, len, new THREE.Color(C.fg), 0.16, 0.09));
@@ -250,6 +315,8 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     });
     cellLines = new THREE.LineSegments(new THREE.BufferGeometry(), mats.cell);
     root.add(cellLines);
+    cell2d = make2dCell();
+    if (cell2d) root.add(cell2d);
     update();
   }
 
@@ -274,6 +341,12 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       }
     });
     updateCells();
+    if (cell2d) cell2d.visible = state.show2d;
+    // rotate about the centre of whatever crystal is showing
+    const vis = atoms.filter(a => !(state.hideUpper && a.upper));
+    target.set(0, 0, 0);
+    vis.forEach(a => target.add(pos(a)));
+    target.divideScalar(Math.max(vis.length, 1));
     document.getElementById("sepOut").textContent = state.sep.toFixed(2) + " a";
     const expr = ["x", "y", "z"].filter((_, i) => state.hkl[i]).join(" + ");
     const f = v => (+v.toFixed(2)).toString();
@@ -309,9 +382,9 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   }
 
   // camera: orthographic orbit around the block
+  const zoomIn = document.getElementById("zoom"), zoomOut = document.getElementById("zoomOut");
   const cam = { theta: Math.atan2(-1.0, 0.55), phi: Math.acos(0.62 / Math.hypot(0.55, 1, 0.62)), zoom: 1 };
   function render() {
-    const target = new THREE.Vector3(N / 2, N / 2, N / 2).addScaledVector(NORMAL, state.sep / 2);
     const r = 20, s = Math.sin(cam.phi);
     camera.position.set(target.x + r * s * Math.cos(cam.theta), target.y + r * s * Math.sin(cam.theta), target.z + r * Math.cos(cam.phi));
     camera.lookAt(target);
@@ -321,6 +394,8 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     else { camera.left = -half; camera.right = half; camera.top = half / aspect; camera.bottom = -half / aspect; }
     camera.updateProjectionMatrix();
     renderer.render(scene, camera);
+    zoomIn.value = cam.zoom;
+    zoomOut.textContent = cam.zoom.toFixed(1) + "×";
   }
   new ResizeObserver(() => { renderer.setSize(stage.clientWidth, stage.clientHeight, false); render(); }).observe(stage);
 
@@ -330,11 +405,31 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   el.addEventListener("pointermove", e => {
     if (!drag) return;
     cam.theta = drag.t - (e.clientX - drag.x) * 0.008;
-    cam.phi = Math.min(Math.PI - 0.05, Math.max(0.05, drag.p - (e.clientY - drag.y) * 0.008));
+    cam.phi = Math.min(Math.PI - 0.001, Math.max(0.001, drag.p - (e.clientY - drag.y) * 0.008));
     render();
   });
   el.addEventListener("pointerup", () => { drag = null; });
   el.addEventListener("wheel", e => { e.preventDefault(); cam.zoom = Math.min(4, Math.max(0.5, cam.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1))); render(); }, { passive: false });
+
+  zoomIn.addEventListener("input", () => { cam.zoom = +zoomIn.value; render(); });
+
+  const upIn = document.getElementById("hideUpper");
+  const VIEW3D = { theta: cam.theta, phi: cam.phi };
+  document.getElementById("showSurf").addEventListener("click", () => {
+    // hide the upper part and look straight down [hkl] at the new surface, so it lies in the screen plane
+    state.hideUpper = true; upIn.checked = true;
+    cam.phi = Math.acos(Math.max(-1, Math.min(1, NORMAL.z)));
+    if (cam.phi < 1e-3) cam.phi = 1e-3;
+    cam.theta = Math.atan2(NORMAL.y, NORMAL.x);
+    update();
+  });
+  document.getElementById("view3d").addEventListener("click", () => {
+    cam.theta = VIEW3D.theta; cam.phi = VIEW3D.phi;
+    state.hideUpper = false; upIn.checked = false;
+    update();
+  });
+  const show2dIn = document.getElementById("show2d");
+  show2dIn.addEventListener("change", () => { state.show2d = show2dIn.checked; update(); });
 
   const sepIn = document.getElementById("sep");
   sepIn.addEventListener("input", () => { state.sep = +sepIn.value; update(); });
@@ -357,7 +452,6 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   hide.addEventListener("change", () => { state.hideIntact = hide.checked; update(); });
   const cellIn = document.getElementById("showCell");
   cellIn.addEventListener("change", () => { state.showCell = cellIn.checked; update(); });
-  const upIn = document.getElementById("hideUpper");
   upIn.addEventListener("change", () => { state.hideUpper = upIn.checked; update(); });
   const dangIn = document.getElementById("showDangle");
   dangIn.addEventListener("change", () => { state.showDangle = dangIn.checked; update(); });
