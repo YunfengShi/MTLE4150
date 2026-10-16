@@ -285,11 +285,18 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     g.add(fill, line);
     // the two primitive vectors a1 and a2, drawn from the shared corner
     [[c[1], "a1"], [c[3], "a2"]].forEach(([tip, t]) => {
-      const v = tip.clone().sub(c[0]), len = v.length();
-      const arrow = new THREE.ArrowHelper(v.clone().normalize(), c[0], len, new THREE.Color(C.fg),
-        Math.min(0.16, len * 0.25), Math.min(0.09, len * 0.14));
-      arrow.traverse(o => { if (o.material) { o.material.depthTest = false; o.material.transparent = true; } o.renderOrder = 8; });
-      g.add(arrow);
+      // solid shaft and cone (WebGL lines are always 1 px, so the thick vector is built from meshes)
+      const v = tip.clone().sub(c[0]), len = v.length(), dir = v.clone().normalize();
+      const headL = Math.min(0.18, len * 0.3), headR = 0.06, shaftR = 0.014;   // shaft about 3 px at default zoom
+      const m = new THREE.MeshBasicMaterial({ color: C.fg, depthTest: false, transparent: true });
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(shaftR, shaftR, len - headL, 12), m);
+      shaft.position.copy(c[0]).addScaledVector(dir, (len - headL) / 2);
+      shaft.quaternion.setFromUnitVectors(Y, dir);
+      const head = new THREE.Mesh(new THREE.ConeGeometry(headR, headL, 16), m);
+      head.position.copy(c[0]).addScaledVector(dir, len - headL / 2);
+      head.quaternion.setFromUnitVectors(Y, dir);
+      shaft.renderOrder = head.renderOrder = 8;
+      g.add(shaft, head);
       const l = label(t, 0.2);
       l.position.copy(c[0]).addScaledVector(v, 0.55).addScaledVector(NORMAL, 0.12);
       g.add(l);
