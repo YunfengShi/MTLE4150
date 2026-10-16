@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moiré Patterns</title>
+<meta name="description" content="Rotate one layer of bilayer graphene or a Penrose quasicrystal against another and watch the moiré pattern form. MTLE 4150, Professor Yunfeng Shi, RPI.">
+<style>
+:root{ --bg:#f4f5f7; --panel:#ffffff; --ink:#1b2430; --muted:#5f6b78; --line:#d6dbe1; --accent:#2a5fb0; --stage:#ffffff; color-scheme:light }
+@media (prefers-color-scheme: dark){ :root{ --bg:#11161c; --panel:#18202a; --ink:#e6ebf1; --muted:#95a1ae; --line:#2a333d; --accent:#7fb0e6; --stage:#0c1015; color-scheme:dark } }
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;padding:12px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+.tabs{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:3px;gap:3px}
+.tabs button{border:0;background:transparent;color:var(--muted);font:600 13px inherit;font-family:inherit;padding:7px 14px;border-radius:6px;cursor:pointer}
+.tabs button[aria-pressed="true"]{background:var(--accent);color:var(--panel)}
+label{display:flex;align-items:center;gap:8px;color:var(--muted)}
+input[type=range]{width:min(320px,60vw);accent-color:var(--accent)}
+output{font:600 14px ui-monospace,Menlo,monospace;color:var(--ink);min-width:62px;font-variant-numeric:tabular-nums}
+select{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+.info{margin-left:auto;color:var(--muted);font-size:13px}
+.info b{color:var(--ink);font-family:ui-monospace,Menlo,monospace}
+main{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:16px}
+canvas{background:var(--stage);border:1px solid var(--line);border-radius:10px;max-width:100%;max-height:100%}
+.step{font:600 13px ui-monospace,Menlo,monospace;border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:4px 8px;border-radius:6px;cursor:pointer}
+.step:hover{border-color:var(--accent)}
+canvas{cursor:grab;touch-action:none} canvas.drag{cursor:grabbing}
+.hint{font-size:12.5px;color:var(--muted)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+</head>
+<body>
+<header>
+  <div class="tabs">
+    <button id="tG" type="button" aria-pressed="true">Bilayer graphene</button>
+    <button id="tQ" type="button" aria-pressed="false">Quasicrystal (Penrose)</button>
+  </div>
+  <label>Rotation <button class="step" id="rotDn" type="button" aria-label="Decrease rotation by 0.1 degree">−0.1</button><input id="rot" type="range" min="0" max="30" step="0.1" value="5"><button class="step" id="rotUp" type="button" aria-label="Increase rotation by 0.1 degree">+0.1</button><output id="rotOut">5.0°</output></label>
+  <label>Size <select id="size"><option value="0">Small</option><option value="1" selected>Medium</option><option value="2">Large</option><option value="3">Extra large</option></select></label>
+  <label><span id="psLbl">Particle size</span> <input id="psize" type="range" min="0.3" max="2" step="0.05" value="1" style="width:min(160px,40vw)"><output id="psOut">1.00×</output></label>
+  <span class="hint">Drag the pattern to shift the top layer</span><button class="step" id="resetShift" type="button">Reset shift</button>
+  <div class="info" id="info"></div>
+</header>
+<main><canvas id="c"></canvas></main>
+
+<script>
+(function(){
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const rot = document.getElementById('rot'), rotOut = document.getElementById('rotOut');
+const sizeSel = document.getElementById('size'), info = document.getElementById('info');
+const psize = document.getElementById('psize'), psOut = document.getElementById('psOut');
+const DEG = Math.PI/180, S3 = Math.sqrt(3), PHI = (1+Math.sqrt(5))/2;
+let mode = 'g';
+const shift = {g:[0,0], q:[0,0]};   // lateral offset of the top layer, in pattern units (nm for graphene)
+let unitPx = 1;                       // CSS px per pattern unit, set on each draw
+const angle = {g:5, q:3};
+
+// ---------- graphene sheet: atoms within a disk, origin at a hexagon centre ----------
+const A = 0.246;                       // lattice constant, nm
+const G_RADIUS = [4, 8, 15, 25];       // sheet radius in nm for Small / Medium / Large / Extra large
+let gCache = {};
+function graphene(R){
+  if(gCache[R]) return gCache[R];
+  const pts = [], n = Math.ceil(R/A*1.3)+2;
+  // hexagon centre at origin: atoms at lattice point + (a/2, a/(2√3)) and + (a, a/√3) shifted
+  const c0 = [A/2, A/(2*S3)];          // centre of hexagon relative to lattice point
+  for(let j=-n;j<=n;j++) for(let i=-n;i<=n;i++){
+    const x = A*(i + j/2), y = A*j*S3/2;
+    for(const [bx,by] of [[0,0],[A/2, A/(2*S3)]]){
+      // shift so a hexagon centre, at (0, a/√3) in this basis, sits at the origin
+      const px = x + bx, py = y + by - A/S3;
+      if(px*px + py*py <= R*R) pts.push(px, py);
+    }
+  }
+  return gCache[R] = new Float32Array(pts);
+}
+
+// ---------- Penrose tiling vertices via Robinson-triangle deflation ----------
+const Q_DEFL = [6, 7, 8, 9];              // deflation steps for Small / Medium / Large
+let qCache = {};
+function penrose(n){
+  if(qCache[n]) return qCache[n];
+  let tri = [];
+  for(let i=0;i<10;i++){
+    let B = [Math.cos((2*i-1)*Math.PI/10), Math.sin((2*i-1)*Math.PI/10)];
+    let C = [Math.cos((2*i+1)*Math.PI/10), Math.sin((2*i+1)*Math.PI/10)];
+    if(i%2===0) [B,C] = [C,B];
+    tri.push([0,[0,0],B,C]);
+  }
+  const lerp = (P,Q,t)=>[P[0]+(Q[0]-P[0])*t, P[1]+(Q[1]-P[1])*t];
+  for(let s=0;s<n;s++){
+    const out = [];
+    for(const [col,a,b,c] of tri){
+      if(col===0){ const P = lerp(a,b,1/PHI); out.push([0,c,P,b],[1,P,c,a]); }
+      else { const Q = lerp(b,a,1/PHI), R = lerp(b,c,1/PHI); out.push([1,R,c,a],[1,Q,R,b],[0,R,Q,a]); }
+    }
+    tri = out;
+  }
+  const seen = new Set(), pts = [];
+  for(const t of tri) for(const p of [t[1],t[2],t[3]]){
+    const key = Math.round(p[0]*1e6)+','+Math.round(p[1]*1e6);
+    if(!seen.has(key)){ seen.add(key); pts.push(p[0],p[1]); }
+  }
+  // rhombus edges: sides A–B and A–C of each Robinson triangle (B–C is a rhombus diagonal)
+  const eSeen = new Set(), segs = [];
+  const k = p => Math.round(p[0]*1e6)+','+Math.round(p[1]*1e6);
+  for(const [,a,b,c] of tri) for(const q of [b,c]){
+    const ka = k(a), kq = k(q), key = ka < kq ? ka+'|'+kq : kq+'|'+ka;
+    if(!eSeen.has(key)){ eSeen.add(key); segs.push(a[0],a[1],q[0],q[1]); }
+  }
+  return qCache[n] = {pts:new Float32Array(pts), segs:new Float32Array(segs), edge:Math.pow(PHI,-n), tiles:tri.length/2};
+}
+
+// ---------- drawing ----------
+function inkRGBA(alpha){
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  return dark ? `rgba(230,236,244,${alpha})` : `rgba(20,30,45,${alpha})`;
+}
+function drawLayer(pts, theta, scale, r, cx, cy, ox=0, oy=0){
+  const c = Math.cos(theta), s = Math.sin(theta);
+  const path = new Path2D();
+  for(let k=0;k<pts.length;k+=2){
+    const x = pts[k], y = pts[k+1];
+    const X = cx + (c*x - s*y + ox)*scale, Y = cy - (s*x + c*y + oy)*scale;
+    path.moveTo(X + r, Y); path.arc(X, Y, r, 0, 2*Math.PI);
+  }
+  ctx.fill(path);                      // one fill per layer: overlap within a layer does not darken
+}
+
+function drawEdges(segs, theta, scale, lw, cx, cy, ox=0, oy=0){
+  const c = Math.cos(theta), s = Math.sin(theta);
+  const path = new Path2D();
+  for(let k=0;k<segs.length;k+=4){
+    const x1=segs[k], y1=segs[k+1], x2=segs[k+2], y2=segs[k+3];
+    path.moveTo(cx + (c*x1 - s*y1 + ox)*scale, cy - (s*x1 + c*y1 + oy)*scale);
+    path.lineTo(cx + (c*x2 - s*y2 + ox)*scale, cy - (s*x2 + c*y2 + oy)*scale);
+  }
+  ctx.lineWidth = lw; ctx.lineCap = 'round';
+  ctx.stroke(path);                    // one stroke per layer: shared edges do not darken
+}
+
+function draw(){
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  const main = cv.parentElement, side = Math.max(240, Math.min(main.clientWidth-32, main.clientHeight-32));
+  cv.style.width = cv.style.height = side+'px';
+  const N = Math.round(side*dpr); cv.width = cv.height = N;
+  ctx.clearRect(0,0,N,N);
+  const cx = N/2, cy = N/2, th = angle[mode]*DEG, sz = +sizeSel.value;
+  ctx.fillStyle = inkRGBA(0.45);
+  if(mode==='g'){
+    const R = G_RADIUS[sz], pts = graphene(R), scale = (N/2*0.96)/R;
+    const r = 0.068*scale*psize.value;             // just under half the C–C distance (0.142 nm)
+    drawLayer(pts, 0, scale, r, cx, cy);
+    drawLayer(pts, th, scale, r, cx, cy, shift.g[0], shift.g[1]);
+    unitPx = scale/dpr;
+    const L = angle.g > 0 ? A/(2*Math.sin(th/2)) : Infinity;
+    info.innerHTML = `Moiré period <b>${isFinite(L) ? L.toFixed(2)+' nm' : '∞'}</b> · sheet ${2*R} nm across · shift <b>${Math.hypot(...shift.g).toFixed(2)} nm</b>`;
+  } else {
+    const {segs, edge, tiles} = penrose(Q_DEFL[sz]), scale = N/2*0.96;
+    const lw = Math.max(0.5, 0.09*edge*scale*psize.value);
+    ctx.strokeStyle = inkRGBA(0.5);
+    drawEdges(segs, 0, scale, lw, cx, cy);
+    drawEdges(segs, th, scale, lw, cx, cy, shift.q[0], shift.q[1]);
+    unitPx = scale/dpr;
+    info.innerHTML = `10-fold Penrose rhombus tiling · <b>${Math.round(tiles).toLocaleString()}</b> rhombi per layer`;
+  }
+}
+
+function setMode(m){
+  mode = m;
+  document.getElementById('tG').setAttribute('aria-pressed', m==='g');
+  document.getElementById('tQ').setAttribute('aria-pressed', m==='q');
+  document.getElementById('psLbl').textContent = m==='g' ? 'Particle size' : 'Line width';
+  rot.max = m==='g' ? 30 : 36;         // graphene repeats every 60° (mirror at 30°); Penrose every 36°
+  rot.value = angle[m]; rotOut.textContent = (+angle[m]).toFixed(1)+'°';
+  draw();
+}
+rot.addEventListener('input', ()=>{ angle[mode] = +rot.value; rotOut.textContent = (+rot.value).toFixed(1)+'°'; draw(); });
+sizeSel.addEventListener('change', draw);
+function stepRot(d){
+  const v = Math.min(+rot.max, Math.max(0, Math.round((angle[mode] + d)*10)/10));
+  angle[mode] = v; rot.value = v; rotOut.textContent = v.toFixed(1)+'°'; draw();
+}
+document.getElementById('rotDn').onclick = ()=>stepRot(-0.1);
+document.getElementById('rotUp').onclick = ()=>stepRot(0.1);
+document.getElementById('resetShift').onclick = ()=>{ shift[mode] = [0,0]; draw(); };
+let last = null;
+cv.addEventListener('pointerdown', e=>{ cv.setPointerCapture(e.pointerId); last = [e.clientX, e.clientY]; cv.classList.add('drag'); });
+cv.addEventListener('pointermove', e=>{
+  if(!last) return;
+  shift[mode][0] += (e.clientX - last[0])/unitPx;
+  shift[mode][1] -= (e.clientY - last[1])/unitPx;
+  last = [e.clientX, e.clientY];
+  if(!pending){ pending = true; requestAnimationFrame(()=>{ pending = false; draw(); }); }
+});
+let pending = false;
+const endDrag = ()=>{ last = null; cv.classList.remove('drag'); };
+cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+psize.addEventListener('input', ()=>{ psOut.textContent = (+psize.value).toFixed(2)+'×'; draw(); });
+document.getElementById('tG').onclick = ()=>setMode('g');
+document.getElementById('tQ').onclick = ()=>setMode('q');
+new ResizeObserver(draw).observe(cv.parentElement);
+try{ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw); }catch(e){}
+setMode('g');
+})();
+</script>
+</body>
+</html>
