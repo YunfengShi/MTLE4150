@@ -94,12 +94,12 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   <div class="controls">
     <div class="field">
-      <label for="ratio">Ratio b/a <input type="number" id="ratioNum" min="0.5" max="3" step="0.001" value="1.41421" aria-label="Ratio b/a value"></label>
-      <input type="range" id="ratio" min="0.5" max="3" step="0.00001" value="1.41421">
+      <label for="ratio">Ratio b/a <input type="number" id="ratioNum" min="0.5" max="3" step="0.001" value="1" aria-label="Ratio b/a value"></label>
+      <input type="range" id="ratio" min="0.5" max="3" step="0.00001" value="1">
     </div>
     <div class="field">
-      <label for="angle">Rotation of lattice 2 (°) <input type="number" id="angleNum" min="0" max="180" step="0.01" value="109.47" aria-label="Rotation angle value"></label>
-      <input type="range" id="angle" min="0" max="180" step="0.01" value="109.47">
+      <label for="angle">Rotation of lattice 2 (°) <input type="number" id="angleNum" min="0" max="180" step="0.01" value="0" aria-label="Rotation angle value"></label>
+      <input type="range" id="angle" min="0" max="180" step="0.01" value="0">
     </div>
     <div class="field">
       <label for="rep">Replication <output id="repOut"></output></label>
@@ -120,7 +120,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 (function () {
   const cv = document.getElementById("cv"), ctx = cv.getContext("2d"), stage = document.getElementById("stage");
   const $ = id => document.getElementById(id);
-  const state = { ratio: 1.41421, angle: 109.47, n: 10, coin: true, lines: false, rad: 0.25 };
+  const state = { ratio: 1, angle: 0, n: 10, coin: true, lines: false, rad: 0.25 };
   const TOL = 0.02;                 // a site counts as coincident within 0.02 a of a red site
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
