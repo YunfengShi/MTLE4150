@@ -111,6 +111,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     </div>
     <div class="checks">
       <label class="check"><input type="checkbox" id="showCoin" checked> Mark coincident sites</label>
+      <label class="check"><input type="checkbox" id="showCenter"> Center atom in each cell (both lattices)</label>
       <label class="check"><input type="checkbox" id="showLines"> Lattice lines</label>
     </div>
   </div>
@@ -120,7 +121,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 (function () {
   const cv = document.getElementById("cv"), ctx = cv.getContext("2d"), stage = document.getElementById("stage");
   const $ = id => document.getElementById(id);
-  const state = { ratio: 1, angle: 0, n: 10, coin: true, lines: false, rad: 0.25 };
+  const state = { ratio: 1, angle: 0, n: 10, coin: true, lines: false, rad: 0.25, center: false };
   const TOL = 0.02;                 // a site counts as coincident within 0.02 a of a red site
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
@@ -130,6 +131,11 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++) {
       const x = i, y = j * b;
       out.push([c * x - s * y, s * x + c * y, i, j]);
+      // optional centre atom at (i + 1/2) a, (j + 1/2) b, inside the patch
+      if (state.center && i < n && j < n) {
+        const xc = i + 0.5, yc = (j + 0.5) * b;
+        out.push([c * xc - s * yc, s * xc + c * yc, i + 0.5, j + 0.5]);
+      }
     }
     return out;
   }
@@ -172,10 +178,20 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     let coin = 0;
     const fg = css("--fg");
     ctx.strokeStyle = fg; ctx.lineWidth = Math.max(1.5, r * 0.22);
+    // red sites are (i, j b) and, with centre atoms, (i + 1/2, (j + 1/2) b)
+    const nearRed = (x, y) => {
+      const i = Math.round(x), j = Math.round(y / b);
+      if (Math.abs(i) <= n && Math.abs(j) <= n && Math.hypot(x - i, y - j * b) <= TOL) return true;
+      if (!state.center) return false;
+      const ic = Math.floor(x) + 0.5, jc = Math.floor(y / b) + 0.5;
+      for (const di of [0, -1, 1]) for (const dj of [0, -1, 1]) {
+        const u = ic + di, v = jc + dj;
+        if (Math.abs(u) < n && Math.abs(v) < n && Math.hypot(x - u, y - v * b) <= TOL) return true;
+      }
+      return false;
+    };
     for (const p of B) {
-      const i = Math.round(p[0]), j = Math.round(p[1] / b);
-      if (Math.abs(i) > n || Math.abs(j) > n) continue;
-      if (Math.hypot(p[0] - i, p[1] - j * b) > TOL) continue;
+      if (!nearRed(p[0], p[1])) continue;
       coin++;
       if (state.coin) { ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), r * 1.45, 0, 2 * Math.PI); ctx.stroke(); }
     }
@@ -204,6 +220,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   $("rad").addEventListener("input", e => { state.rad = +e.target.value; draw(); });
   $("rep").addEventListener("input", e => { state.n = +e.target.value; draw(); });
   $("showCoin").addEventListener("change", e => { state.coin = e.target.checked; draw(); });
+  $("showCenter").addEventListener("change", e => { state.center = e.target.checked; draw(); });
   $("showLines").addEventListener("change", e => { state.lines = e.target.checked; draw(); });
 
   new ResizeObserver(draw).observe(stage);
