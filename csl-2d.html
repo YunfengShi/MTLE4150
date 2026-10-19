@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>2D Coincident Site Lattice</title>
+<meta name="description" content="Rotate one rectangular lattice against an identical fixed one and find the coincident sites. MTLE 4150, Professor Yunfeng Shi, RPI.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,600&display=swap">
+<style>
+/* Layout: one square-ish drawing stage, a control strip under it */
+:root {
+  --bg: #eef1f4;
+  --panel: #fbfcfd;
+  --fg: #18212c;
+  --muted: #5a6574;
+  --line: #d5dbe3;
+  --accent: #c4471c;
+  --scene: #ffffff;
+  --red: 214, 48, 39;      /* lattice 1 (fixed), as r, g, b */
+  --blue: 33, 102, 196;    /* lattice 2 (rotated) */
+  --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f141b; --panel: #161d26; --fg: #e5eaf0; --muted: #96a2b2; --line: #29323e;
+    --accent: #ff7a4a; --scene: #121821; --red: 255, 92, 80; --blue: 90, 160, 255;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f141b; --panel: #161d26; --fg: #e5eaf0; --muted: #96a2b2; --line: #29323e;
+  --accent: #ff7a4a; --scene: #121821; --red: 255, 92, 80; --blue: 90, 160, 255;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 28px;
+}
+.wrap { max-width: 1000px; margin: 0 auto; display: grid; gap: 14px; }
+.code { font: 500 13px var(--font-mono); letter-spacing: .08em; color: var(--accent); }
+h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(26px, 3.4vw, 34px); line-height: 1.1; margin: 0; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); max-width: 72ch; }
+.stage { position: relative; background: var(--scene); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  height: min(72vh, 680px); min-height: 340px; }
+.stage canvas { display: block; width: 100%; height: 100%; }
+.key { position: absolute; left: 12px; top: 12px; display: grid; gap: 4px; font-size: 13px;
+  background: color-mix(in srgb, var(--scene) 85%, transparent); padding: 8px 10px; border-radius: 8px; }
+.key span { display: flex; align-items: center; gap: 8px; }
+.key i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.readout { position: absolute; right: 12px; top: 12px; font: 13px/1.4 var(--font-mono); color: var(--fg); text-align: right;
+  background: color-mix(in srgb, var(--scene) 85%, transparent); padding: 8px 10px; border-radius: 8px; font-variant-numeric: tabular-nums; }
+.controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px 24px; align-items: end;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+@media (max-width: 900px) { .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .controls { grid-template-columns: minmax(0, 1fr); } }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field label { font-size: 13.5px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.field input[type="number"] { width: 6.5em; font: 13px var(--font-mono); padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--scene); color: var(--fg); text-align: right; }
+.field output { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.checks { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 22px; }
+.check { display: flex; align-items: center; gap: 9px; font-size: 13.5px; cursor: pointer; }
+.check input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header style="display:grid;gap:4px">
+    <div class="code">MTLE 4150</div>
+    <h1>2D Coincident Site Lattice</h1>
+  </header>
+  <p class="lede">Two identical rectangular lattices with lattice constants a and b. The red lattice is fixed. The blue lattice rotates about the shared origin atom at the centre. Where a blue site lands on a red site, the two lattices coincide.</p>
+
+  <div class="stage" id="stage">
+    <canvas id="cv" aria-label="Red fixed lattice and blue rotated lattice"></canvas>
+    <div class="key">
+      <span><i style="background:rgba(var(--red),.6)"></i>Lattice 1 (fixed)</span>
+      <span><i style="background:rgba(var(--blue),.6)"></i>Lattice 2 (rotated)</span>
+      <span id="coinKey"><i style="background:transparent;border:2px solid var(--fg)"></i>Coincident site</span>
+    </div>
+    <div class="readout" id="readout"></div>
+  </div>
+
+  <div class="controls">
+    <div class="field">
+      <label for="ratio">Ratio b/a <input type="number" id="ratioNum" min="0.5" max="3" step="0.001" value="1.41421" aria-label="Ratio b/a value"></label>
+      <input type="range" id="ratio" min="0.5" max="3" step="0.00001" value="1.41421">
+    </div>
+    <div class="field">
+      <label for="angle">Rotation of lattice 2 (°) <input type="number" id="angleNum" min="0" max="180" step="0.01" value="109.47" aria-label="Rotation angle value"></label>
+      <input type="range" id="angle" min="0" max="180" step="0.01" value="109.47">
+    </div>
+    <div class="field">
+      <label for="rep">Replication <output id="repOut"></output></label>
+      <input type="range" id="rep" min="2" max="30" step="1" value="10">
+    </div>
+    <div class="field">
+      <label for="rad">Atom radius <output id="radOut"></output></label>
+      <input type="range" id="rad" min="0.02" max="0.6" step="0.01" value="0.25">
+    </div>
+    <div class="checks">
+      <label class="check"><input type="checkbox" id="showCoin" checked> Mark coincident sites</label>
+      <label class="check"><input type="checkbox" id="showLines"> Lattice lines</label>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const cv = document.getElementById("cv"), ctx = cv.getContext("2d"), stage = document.getElementById("stage");
+  const $ = id => document.getElementById(id);
+  const state = { ratio: 1.41421, angle: 109.47, n: 10, coin: true, lines: false, rad: 0.25 };
+  const TOL = 0.02;                 // a site counts as coincident within 0.02 a of a red site
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+  // lattice 1 sites: (i a, j b) for |i|, |j| <= n, with a = 1
+  function sites(rot) {
+    const b = state.ratio, n = state.n, c = Math.cos(rot), s = Math.sin(rot), out = [];
+    for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++) {
+      const x = i, y = j * b;
+      out.push([c * x - s * y, s * x + c * y, i, j]);
+    }
+    return out;
+  }
+
+  function draw() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W = stage.clientWidth, H = stage.clientHeight;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = css("--scene"); ctx.fillRect(0, 0, W, H);
+
+    const b = state.ratio, n = state.n, rot = state.angle * Math.PI / 180;
+    // fit the fixed lattice (2n a wide, 2n b tall) inside the stage
+    const scale = Math.min((W - 40) / (2 * n), (H - 40) / (2 * n * b));
+    const X = x => W / 2 + x * scale, Y = y => H / 2 - y * scale;
+    const r = Math.max(1.5, state.rad * scale);                          // atom radius in px (state.rad is in units of a)
+    const red = css("--red"), blue = css("--blue");
+
+    const A = sites(0), B = sites(rot);
+
+    if (state.lines) {
+      const c = Math.cos(rot), s = Math.sin(rot);
+      const grid = (col, R) => {
+        ctx.strokeStyle = `rgba(${col},0.35)`; ctx.lineWidth = 1; ctx.beginPath();
+        const P = (x, y) => [X(R ? c * x - s * y : x), Y(R ? s * x + c * y : y)];
+        for (let i = -n; i <= n; i++) { const p = P(i, -n * b), q = P(i, n * b); ctx.moveTo(...p); ctx.lineTo(...q); }
+        for (let j = -n; j <= n; j++) { const p = P(-n, j * b), q = P(n, j * b); ctx.moveTo(...p); ctx.lineTo(...q); }
+        ctx.stroke();
+      };
+      grid(red, false); grid(blue, true);
+    }
+
+    const dots = (pts, col) => {
+      ctx.fillStyle = `rgba(${col},0.5)`;
+      for (const p of pts) { ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), r, 0, 2 * Math.PI); ctx.fill(); }
+    };
+    dots(A, red); dots(B, blue);
+
+    // coincident sites: a blue site whose position is within TOL of a red lattice point inside the red patch
+    let coin = 0;
+    const fg = css("--fg");
+    ctx.strokeStyle = fg; ctx.lineWidth = Math.max(1.5, r * 0.22);
+    for (const p of B) {
+      const i = Math.round(p[0]), j = Math.round(p[1] / b);
+      if (Math.abs(i) > n || Math.abs(j) > n) continue;
+      if (Math.hypot(p[0] - i, p[1] - j * b) > TOL) continue;
+      coin++;
+      if (state.coin) { ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), r * 1.45, 0, 2 * Math.PI); ctx.stroke(); }
+    }
+
+    $("readout").innerHTML = `b/a = ${b.toFixed(3)}<br>θ = ${state.angle.toFixed(2)}°<br>coincident sites: ${coin}`;
+    $("radOut").textContent = `${state.rad.toFixed(2)} a`;
+    $("repOut").textContent = `${2 * n} × ${2 * n} cells`;
+    $("coinKey").hidden = !state.coin;
+  }
+
+  // two-way binding between each slider and its number box
+  function bind(slider, box, key) {
+    const s = $(slider), b = $(box);
+    const set = v => {
+      v = Math.min(+s.max, Math.max(+s.min, v));
+      if (!isFinite(v)) return;
+      state[key] = v; s.value = v; if (document.activeElement !== b) b.value = v;
+      draw();
+    };
+    s.addEventListener("input", () => { b.value = s.value; set(+s.value); });
+    b.addEventListener("change", () => set(+b.value));
+    b.addEventListener("input", () => { if (b.value !== "") set(+b.value); });
+  }
+  bind("ratio", "ratioNum", "ratio");
+  bind("angle", "angleNum", "angle");
+  $("rad").addEventListener("input", e => { state.rad = +e.target.value; draw(); });
+  $("rep").addEventListener("input", e => { state.n = +e.target.value; draw(); });
+  $("showCoin").addEventListener("change", e => { state.coin = e.target.checked; draw(); });
+  $("showLines").addEventListener("change", e => { state.lines = e.target.checked; draw(); });
+
+  new ResizeObserver(draw).observe(stage);
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+  new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  draw();
+})();
+</script>
+</body>
+</html>
