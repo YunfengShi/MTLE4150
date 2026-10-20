@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Grain Boundary Builder</title>
+<meta name="description" content="Build tilt and twist grain boundaries in SC, BCC and FCC crystals: choose the axis, rotate, cut and join. MTLE 4150, Professor Yunfeng Shi, RPI.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,600&display=swap">
+<style>
+/* Layout: the 3D bicrystal fills the bench; four numbered steps (the real build order) sit beneath it */
+:root {
+  --bg: #eef1f4;
+  --panel: #fbfcfd;
+  --fg: #18212c;
+  --muted: #5a6574;
+  --line: #d5dbe3;
+  --accent: #c4471c;
+  --scene: #ffffff;
+  --red: #d63027;          /* crystal 1 (fixed) */
+  --blue: #2166c4;         /* crystal 2 (rotated) */
+  --close: #f2a20c;        /* atoms that end up too close across the boundary */
+  --plane: #6b7a8c;
+  --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f141b; --panel: #161d26; --fg: #e5eaf0; --muted: #96a2b2; --line: #29323e;
+    --accent: #ff7a4a; --scene: #121821; --red: #ff5c50; --blue: #5aa0ff; --close: #ffc23d; --plane: #8d9bb0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f141b; --panel: #161d26; --fg: #e5eaf0; --muted: #96a2b2; --line: #29323e;
+  --accent: #ff7a4a; --scene: #121821; --red: #ff5c50; --blue: #5aa0ff; --close: #ffc23d; --plane: #8d9bb0;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 28px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 14px; }
+.code { font: 500 13px var(--font-mono); letter-spacing: .08em; color: var(--accent); }
+h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(26px, 3.4vw, 34px); line-height: 1.1; margin: 0; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); max-width: 76ch; }
+.stage { position: relative; background: var(--scene); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  height: min(64vh, 620px); min-height: 360px; touch-action: none; }
+.stage canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+.stage canvas:active { cursor: grabbing; }
+.key { position: absolute; left: 12px; top: 12px; display: grid; gap: 4px; font-size: 13px;
+  background: color-mix(in srgb, var(--scene) 85%, transparent); padding: 8px 10px; border-radius: 8px; }
+.key span { display: flex; align-items: center; gap: 8px; }
+.key i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.readout { position: absolute; right: 12px; top: 12px; font: 12.5px/1.5 var(--font-mono); text-align: right;
+  background: color-mix(in srgb, var(--scene) 85%, transparent); padding: 8px 10px; border-radius: 8px; font-variant-numeric: tabular-nums; }
+.viewbar { position: absolute; left: 12px; bottom: 12px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.hint { font-size: 12px; color: var(--muted); }
+.steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 980px) { .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .steps { grid-template-columns: minmax(0, 1fr); } }
+.step { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.step h2 { margin: 0; font: 600 13.5px/1.2 var(--font-body); display: flex; gap: 8px; align-items: center; }
+.step h2 b { font: 600 12px/1 var(--font-mono); width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center;
+  background: var(--fg); color: var(--panel); }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; border: 0; margin: 0; padding: 0; min-width: 0; }
+.seg legend { font-size: 12.5px; color: var(--muted); padding: 0; margin-bottom: 4px; width: 100%; }
+.seg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.seg span { display: inline-block; font: 500 13px/1 var(--font-body); padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; background: var(--panel); }
+.seg input:checked + span { background: var(--fg); color: var(--panel); border-color: var(--fg); }
+.seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field label { font-size: 13px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.field input[type="number"] { width: 6.2em; font: 13px var(--font-mono); padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--scene); color: var(--fg); text-align: right; }
+.field output, .note { font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+select { font: 13px var(--font-body); padding: 5px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--scene); color: var(--fg); width: 100%; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.check input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; flex: none; }
+.btn { font: 600 13px/1 var(--font-body); padding: 9px 13px; border-radius: 8px; cursor: pointer; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
+.btn.primary { background: var(--fg); color: var(--panel); border-color: var(--fg); }
+.btn.small { padding: 6px 10px; font-weight: 500; }
+.btn:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.planes { font: 12.5px/1.6 var(--font-mono); }
+.fallback { padding: 24px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header style="display:grid;gap:4px">
+    <div class="code">MTLE 4150</div>
+    <h1>Grain Boundary Builder</h1>
+  </header>
+  <p class="lede">Make a boundary the way it is defined: take two identical crystals, rotate the second about a common axis, cut both along a plane, and join the halves. In a tilt boundary the plane contains the axis; in a twist boundary the plane is perpendicular to it.</p>
+
+  <div class="stage" id="stage">
+    <div class="key">
+      <span><i style="background:var(--red)"></i>Crystal 1 (fixed)</span>
+      <span><i style="background:var(--blue)"></i>Crystal 2 (rotated)</span>
+      <span id="closeKey" hidden><i style="background:var(--close)"></i>Removed: too close across the boundary</span>
+    </div>
+    <div class="readout" id="readout"></div>
+    <div class="viewbar">
+      <button class="btn small" id="viewAxis" type="button">View along the axis</button>
+      <button class="btn small" id="viewTilt" type="button">Tilted view</button>
+      <span class="hint">Drag to rotate · scroll to zoom</span>
+    </div>
+  </div>
+
+  <div class="steps">
+    <section class="step">
+      <h2><b>1</b>Boundary type, crystal and axis</h2>
+      <fieldset class="seg">
+        <legend>Boundary type</legend>
+        <label><input type="radio" name="mode" value="tilt" checked><span>Tilt</span></label>
+        <label><input type="radio" name="mode" value="twist"><span>Twist</span></label>
+      </fieldset>
+      <fieldset class="seg">
+        <legend>Lattice</legend>
+        <label><input type="radio" name="lat" value="sc"><span>SC</span></label>
+        <label><input type="radio" name="lat" value="bcc"><span>BCC</span></label>
+        <label><input type="radio" name="lat" value="fcc" checked><span>FCC</span></label>
+      </fieldset>
+      <fieldset class="seg">
+        <legend>Rotation axis</legend>
+        <label><input type="radio" name="axis" value="001" checked><span>[001]</span></label>
+        <label><input type="radio" name="axis" value="110"><span>[110]</span></label>
+        <label><input type="radio" name="axis" value="111"><span>[111]</span></label>
+      </fieldset>
+      <div class="field">
+        <label for="size">Crystal size <output id="sizeOut"></output></label>
+        <input type="range" id="size" min="3" max="8" step="1" value="5">
+      </div>
+    </section>
+
+    <section class="step">
+      <h2><b>2</b>Rotate crystal 2</h2>
+      <div class="field">
+        <label for="theta">Rotation angle θ (°) <input type="number" id="thetaNum" min="0" max="180" step="0.0001" value="36.8699" aria-label="Rotation angle value"></label>
+        <input type="range" id="theta" min="0" max="180" step="0.0001" value="36.8699">
+      </div>
+      <div class="field">
+        <label for="preset">CSL angles for this axis</label>
+        <select id="preset"></select>
+      </div>
+    </section>
+
+    <section class="step">
+      <h2><b>3</b>Cutting plane</h2>
+      <p class="note" id="twistNote" hidden>Twist boundary: the cutting plane is perpendicular to the rotation axis, so there is nothing to choose.</p>
+      <div id="tiltPlaneCtl" class="field">
+        <label for="phi">Plane normal angle φ (°) <input type="number" id="phiNum" min="0" max="180" step="0.0001" value="18.43495" aria-label="Plane normal angle value"></label>
+        <input type="range" id="phi" min="0" max="180" step="0.0001" value="18.43495">
+      </div>
+      <div class="row" id="tiltPlaneBtns">
+        <button class="btn small" id="sym" type="button">Symmetric: φ = θ/2</button>
+        <button class="btn small" id="sym2" type="button">φ = θ/2 + 90°</button>
+      </div>
+      <div class="planes" id="planes"></div>
+    </section>
+
+    <section class="step">
+      <h2><b>4</b>Put the crystals together</h2>
+      <div class="row">
+        <button class="btn primary" id="assemble" type="button">Assemble</button>
+        <button class="btn" id="separate" type="button">Separate</button>
+      </div>
+      <label class="check"><input type="checkbox" id="showPlane" checked><span id="showPlaneLabel"> Show the cutting plane</span></label>
+      <div class="note" id="closeNote"></div>
+    </section>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  const stage = document.getElementById("stage");
+  if (!window.THREE) { stage.insertAdjacentHTML("afterbegin", '<p class="fallback">The 3D viewer could not load. Reload the page to try again.</p>'); return; }
+  let renderer;
+  try { renderer = new THREE.WebGLRenderer({ antialias: true }); }
+  catch (e) { stage.insertAdjacentHTML("afterbegin", '<p class="fallback">This browser has WebGL turned off, so the crystals cannot be drawn.</p>'); return; }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  stage.insertBefore(renderer.domElement, stage.firstChild);
+  const $ = id => document.getElementById(id);
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ---------- crystallography (a = 1) ----------
+  const BASIS = { sc: [[0, 0, 0]], bcc: [[0, 0, 0], [.5, .5, .5]], fcc: [[0, 0, 0], [.5, .5, 0], [.5, 0, .5], [0, .5, .5]] };
+  const NN = { sc: 1, bcc: Math.sqrt(3) / 2, fcc: Math.SQRT1_2 };
+  // crystal frame for each axis: e3 = axis, e1 = a lattice direction perpendicular to it, e2 = e3 × e1
+  const FRAME = {
+    "001": { e3: [0, 0, 1], e1: [1, 0, 0] },
+    "110": { e3: [1, 1, 0], e1: [0, 0, 1] },
+    "111": { e3: [1, 1, 1], e1: [1, -1, 0] },
+  };
+  const PRESETS = {
+    "001": [["Σ5", 36.8699], ["Σ13", 22.6199], ["Σ17", 28.0725], ["Σ25", 16.2602], ["Σ29", 43.6028], ["Σ41", 12.6804]],
+    "110": [["Σ3", 70.5288], ["Σ9", 38.9424], ["Σ11", 50.4788], ["Σ19", 26.5254], ["Σ27", 31.5863], ["Σ33", 20.0466]],
+    "111": [["Σ3", 60.0], ["Σ7", 38.2132], ["Σ13", 27.7958], ["Σ19", 46.8264], ["Σ21", 21.7868], ["Σ31", 17.8966]],
+  };
+  const v3 = (a) => new THREE.Vector3(a[0], a[1], a[2]);
+
+  const state = { mode: "tilt", lat: "fcc", axis: "001", L: 5, theta: 36.8699, phi: 18.43495, joined: false, t: 0,
+                  showPlane: true };
+
+  let M;                                        // rows e1, e2, e3: lab = M · crystal
+  let period = 1;                               // repeat length along the axis
+  const REPEATS = 3;                            // slab thickness along the axis, in repeats
+  let atoms = [];                               // positions in lab frame of crystal 1 (crystal 2 = Rz(θ)·same)
+
+  function frameMatrix() {
+    const f = FRAME[state.axis];
+    const e3 = v3(f.e3).normalize(), e1 = v3(f.e1).normalize(), e2 = new THREE.Vector3().crossVectors(e3, e1);
+    return [e1, e2, e3];
+  }
+  function axisPeriod() {
+    // shortest lattice vector along the axis
+    const ax = v3(FRAME[state.axis].e3), basis = BASIS[state.lat];
+    let best = Infinity;
+    for (let k = 1; k <= 4; k++) for (const b of basis) {
+      const p = ax.clone().multiplyScalar(k / 2);                       // candidates k/2 · [uvw]
+      const q = [p.x - b[0], p.y - b[1], p.z - b[2]];                  // a lattice point if p − b is an integer vector
+      if (q.every(x => Math.abs(x - Math.round(x)) < 1e-9)) best = Math.min(best, p.length());
+    }
+    return best;
+  }
+  function buildLattice() {
+    M = frameMatrix();
+    period = axisPeriod();
+    const L = state.L, R = Math.ceil(L * 1.8 + REPEATS * 3.6) + 2, basis = BASIS[state.lat];
+    const twist = state.mode === "twist";
+    const zlo = twist ? -REPEATS * period : 0, zhi = REPEATS * period, zshift = twist ? 0 : REPEATS * period / 2;
+    atoms = [];
+    const seen = new Set();
+    for (let i = -R; i <= R; i++) for (let j = -R; j <= R; j++) for (let k = -R; k <= R; k++) for (const b of basis) {
+      const c = new THREE.Vector3(i + b[0], j + b[1], k + b[2]);
+      const x = c.dot(M[0]), y = c.dot(M[1]), z = c.dot(M[2]);
+      if (Math.abs(x) > L + 1e-9 || Math.abs(y) > L + 1e-9) continue;
+      if (z < zlo - 1e-9 || z > zhi - 1e-6) continue;                    // REPEATS repeats along the axis (each side, for twist)
+      const key = `${x.toFixed(4)},${y.toFixed(4)},${z.toFixed(4)}`;
+      if (seen.has(key)) continue; seen.add(key);
+      atoms.push(new THREE.Vector3(x, y, z - zshift));
+    }
+  }
+
+  // integer Miller-type indices for a direction given in cubic crystal axes
+  function millerOf(v) {
+    const u = v.clone().normalize();
+    let best = null, bestAng = Infinity;
+    for (let h = -12; h <= 12; h++) for (let k = -12; k <= 12; k++) for (let l = -12; l <= 12; l++) {
+      if (!h && !k && !l) continue;
+      const w = new THREE.Vector3(h, k, l);
+      const ang = Math.acos(Math.min(1, Math.abs(w.dot(u)) / w.length()));
+      if (ang < bestAng - 1e-9 || (Math.abs(ang - bestAng) < 1e-9 && w.lengthSq() < best.lengthSq())) { bestAng = ang; best = w; }
+    }
+    if (best.dot(u) < 0) best.multiplyScalar(-1);
+    const g = gcd3(best.x, best.y, best.z);
+    best.divideScalar(g);
+    return { idx: best, deg: bestAng * 180 / Math.PI };
+  }
+  function gcd(a, b) { a = Math.abs(a); b = Math.abs(b); while (b) [a, b] = [b, a % b]; return a || 1; }
+  function gcd3(a, b, c) { return gcd(gcd(a, b), c); }
+  const fmtIdx = w => "(" + [w.x, w.y, w.z].map(n => n < 0 ? `${-n}̅` : `${n}`).join(" ") + ")";
+
+  // ---------- scene ----------
+  const scene = new THREE.Scene();
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -200, 200);
+  camera.position.set(0, 0, 50); camera.lookAt(0, 0, 0);
+  scene.add(camera);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.65));
+  const key = new THREE.DirectionalLight(0xffffff, 0.65); key.position.set(2, 3, 5); camera.add(key);
+  const root = new THREE.Group(); scene.add(root);           // drag rotates this group
+
+  const MAXN = 6000;
+  const sphere = new THREE.SphereGeometry(1, 20, 14);
+  const mats = {};
+  const mesh = {};
+  function makeMeshes() {
+    for (const k of Object.keys(mesh)) { root.remove(mesh[k]); }
+    Object.values(mats).forEach(m => m.dispose());
+    const std = (c, extra) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.45, metalness: 0.1 }, extra || {}));
+    mats.red = std(css("--red")); mats.blue = std(css("--blue"));
+    mats.redGhost = std(css("--red"), { transparent: true, opacity: 0.16, depthWrite: false });
+    mats.blueGhost = std(css("--blue"), { transparent: true, opacity: 0.16, depthWrite: false });
+    mats.close = std(css("--close"), { emissive: new THREE.Color(css("--close")), emissiveIntensity: 0.25 });
+    mats.plane = new THREE.MeshBasicMaterial({ color: css("--plane"), transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false });
+    mats.planeEdge = new THREE.LineBasicMaterial({ color: css("--plane") });
+    for (const k of ["red", "blue", "redGhost", "blueGhost", "close"]) {
+      mesh[k] = new THREE.InstancedMesh(sphere, mats[k], MAXN);
+      mesh[k].count = 0;
+      mesh[k].instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      root.add(mesh[k]);
+    }
+    renderer.setClearColor(new THREE.Color(css("--scene")), 1);
+  }
+  let planeGroup = new THREE.Group(); root.add(planeGroup);
+
+  const dummy = new THREE.Object3D();
+  function fill(m, list, r) {
+    let n = 0;
+    for (const p of list) { if (n >= MAXN) break; dummy.position.copy(p); dummy.scale.setScalar(r); dummy.updateMatrix(); m.setMatrixAt(n++, dummy.matrix); }
+    m.count = n; m.instanceMatrix.needsUpdate = true;
+  }
+
+  const ease = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  let closeCache = { key: "" }, planeCache = { key: "" };
+
+  function update() {
+    const th = state.theta * Math.PI / 180, ph = state.phi * Math.PI / 180;
+    const twist = state.mode === "twist";
+    const n = twist ? new THREE.Vector3(0, 0, 1)                   // twist: plane normal along the axis
+                    : new THREE.Vector3(Math.cos(ph), Math.sin(ph), 0);   // tilt: normal perpendicular to the axis
+    const Rz = new THREE.Matrix4().makeRotationZ(th);
+    const r = 0.28 * NN[state.lat];
+
+    // joined (unshifted) positions: crystal 1 keeps n·r <= 0, crystal 2 keeps n·r > 0
+    const k1 = [], g1 = [], k2 = [], g2 = [];
+    const EPS = 1e-3;                                               // atoms within EPS of the plane belong to crystal 1
+    for (const p of atoms) {
+      (p.dot(n) <= EPS ? k1 : g1).push(p);
+      const q = p.clone().applyMatrix4(Rz);
+      (q.dot(n) > EPS ? k2 : g2).push(q);
+    }
+
+    // rigid-body translation of crystal 2: found when Assemble is pressed (see solve), zero while apart
+    const fit = closeCache.key === setupKey() ? closeCache : null;
+    const T = fit && state.t > 0 ? fit.T : new THREE.Vector3();
+    const { s1 = 0, s2 = 0, gap = 0, dmin = NaN } = fit || {};
+
+    // animation: ghosts fade over the first 30 %, then the halves slide together while crystal 2 takes up its shift
+    const ghostFade = Math.min(1, state.t / 0.3);
+    const slide = ease(Math.max(0, (state.t - 0.3) / 0.7));
+    const D = (twist ? REPEATS * period * 0.6 + 1.5 : state.L + 1.2) * (1 - slide);
+    const off1 = n.clone().multiplyScalar(-D);
+    const off2 = n.clone().multiplyScalar(D).addScaledVector(T, slide);
+    const done = state.t >= 1;
+
+    fill(mesh.red, k1.map(p => p.clone().add(off1)), r);
+    fill(mesh.blue, k2.map(q => q.clone().add(off2)), r);
+    mats.redGhost.opacity = mats.blueGhost.opacity = 0.16 * (1 - ghostFade);
+    fill(mesh.redGhost, ghostFade < 1 ? g1.map(p => p.clone().add(off1)) : [], r);
+    fill(mesh.blueGhost, ghostFade < 1 ? g2.map(q => q.clone().add(off2)) : [], r);
+    fill(mesh.close, [], r);
+    mesh.close.visible = false;
+    $("closeKey").hidden = true;
+    const shiftNote = !fit ? "" : `crystal 2 shifted ${s1 >= 0 ? "+" : "−"}${Math.abs(s1).toFixed(3)}a and ${s2 >= 0 ? "+" : "−"}${Math.abs(s2).toFixed(3)}a in the plane, ` +
+      `${gap >= 0 ? "+" : "−"}${Math.abs(gap).toFixed(3)}a along the normal`;
+
+    // cutting plane(s): one per crystal while apart, a single boundary once joined
+    root.remove(planeGroup);
+    planeGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+    planeGroup = new THREE.Group();
+    if (state.showPlane) {
+      const w = 2 * state.L * (twist ? 1.1 : 1.45), h = twist ? w : REPEATS * period + 0.6;
+      const t = twist ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(-n.y, n.x, 0);   // first in-plane direction
+      const t2 = twist ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);       // second in-plane direction
+      const quad = (c) => {
+        const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) =>
+          c.clone().addScaledVector(t, a * w / 2).addScaledVector(t2, b * h / 2));
+        const g = new THREE.BufferGeometry().setFromPoints([corners[0], corners[1], corners[2], corners[0], corners[2], corners[3]]);
+        planeGroup.add(new THREE.Mesh(g, mats.plane));
+        planeGroup.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(corners), mats.planeEdge));
+      };
+      if (D > 1e-3) { quad(off1); quad(off2); } else quad(new THREE.Vector3());
+    }
+    root.add(planeGroup);
+
+    // readouts
+    const preset = PRESETS[state.axis].find(([, a]) => Math.abs(a - state.theta) < 0.006);
+    $("readout").innerHTML =
+      `${state.lat.toUpperCase()} · axis [${state.axis.split("").join("")}] · ${twist ? "twist" : "tilt"}<br>θ = ${state.theta.toFixed(2)}°${preset ? " (" + preset[0] + ")" : ""}` +
+      (twist ? "" : `<br>φ = ${state.phi.toFixed(2)}°`) +
+      (!twist && state.joined && state.t >= 1 ? `<br>${symmetric() ? "symmetric" : "asymmetric"} tilt` : "");
+    const pkey = [state.mode, state.axis, state.theta, twist ? 0 : state.phi].join("|");
+    if (planeCache.key !== pkey) { planeReadout(n, th); planeCache.key = pkey; }
+    $("closeNote").innerHTML = done && fit
+      ? `No atoms removed. Rigid-body translation: ${shiftNote}.<br>Closest pair across the boundary: ${isFinite(dmin) ? dmin.toFixed(3) : "–"} × nearest-neighbor distance.`
+      : "Assemble to join the halves. Crystal 2 is shifted as a rigid body so the closest pair across the boundary is exactly one nearest-neighbor distance.";
+    render();
+  }
+
+  function setupKey() {
+    return [state.mode, state.lat, state.axis, state.L, state.theta, state.mode === "twist" ? 0 : state.phi].join("|");
+  }
+  // find the rigid-body translation of crystal 2 for the current setup (the in-plane shift and the gap along n that make
+  // the closest pair across the boundary exactly one nearest-neighbor distance, with the smallest possible gap)
+  function solve() {
+    const key = setupKey();
+    if (closeCache.key === key) return;
+    const twist = state.mode === "twist", th = state.theta * Math.PI / 180, ph = state.phi * Math.PI / 180;
+    const n = twist ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(Math.cos(ph), Math.sin(ph), 0);
+    const Rz = new THREE.Matrix4().makeRotationZ(th);
+    const k1 = [], k2 = [];
+    for (const p of atoms) {
+      if (p.dot(n) <= 1e-3) k1.push(p);
+      const q = p.clone().applyMatrix4(Rz);
+      if (q.dot(n) > 1e-3) k2.push(q);
+    }
+    const t1 = twist ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(-n.y, n.x, 0);
+    const t2 = twist ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
+    const range2 = twist ? 1 : period / 2;                           // along the tilt axis the crystal repeats every period
+    closeCache = Object.assign({ key }, relax(k1, k2, n, t1, t2, NN[state.lat], 1, range2));
+  }
+
+  function symmetric() {
+    const d = ((state.phi - state.theta / 2) % 90 + 90) % 90;
+    return d < 0.01 || d > 89.99;
+  }
+
+  function planeReadout(n, th) {
+    // plane normal in each crystal's cubic axes: crystal = Mᵀ · lab
+    const toCrystal = (v) => new THREE.Vector3(
+      M[0].x * v.x + M[1].x * v.y + M[2].x * v.z,
+      M[0].y * v.x + M[1].y * v.y + M[2].y * v.z,
+      M[0].z * v.x + M[1].z * v.y + M[2].z * v.z);
+    const n1 = toCrystal(n);
+    const n2lab = n.clone().applyMatrix4(new THREE.Matrix4().makeRotationZ(-th));
+    const n2 = toCrystal(n2lab);
+    const a = millerOf(n1), b = millerOf(n2);
+    const show = (m) => m.deg < 0.05 ? fmtIdx(m.idx) : `≈ ${fmtIdx(m.idx)} (${m.deg.toFixed(1)}° off)`;
+    $("planes").innerHTML = `Plane in crystal 1: ${show(a)}<br>Plane in crystal 2: ${show(b)}<br>` +
+      (state.mode === "twist" ? `Axis normal to the plane: twist boundary` : `Axis lies in the plane: tilt boundary`);
+  }
+
+
+  // ---------- rigid-body translation search ----------
+  // For an in-plane shift (s1, s2) of crystal 2, the gap g along n that it needs is the largest
+  //   sqrt(NN² − ρ²) − h   over cross pairs with in-plane distance ρ < NN and normal separation h.
+  // Minimise that gap over (s1, s2): a coarse grid over ±NN, then a shrinking pattern search.
+  function relax(k1, k2, n, t1, t2, nn, range1, range2) {
+    const W = 2.2 * nn;                                              // atoms deeper than this cannot reach a contact
+    const A = k1.filter(p => -p.dot(n) < W).map(p => [p.dot(t1), p.dot(t2), p.dot(n)]);
+    const B = k2.filter(q => q.dot(n) < W).map(q => [q.dot(t1), q.dot(t2), q.dot(n)]);
+    const cell = nn, bins = new Map(), keyOf = (i, j) => i * 100003 + j;
+    for (const a of A) {
+      const k = keyOf(Math.floor(a[0] / cell), Math.floor(a[1] / cell));
+      if (!bins.has(k)) bins.set(k, []); bins.get(k).push(a);
+    }
+    const nn2 = nn * nn, GMIN = -0.5 * nn;
+    function gapFor(s1, s2) {
+      let g = GMIN;
+      for (const b of B) {
+        const x = b[0] + s1, y = b[1] + s2, ci = Math.floor(x / cell), cj = Math.floor(y / cell);
+        for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+          const list = bins.get(keyOf(ci + di, cj + dj)); if (!list) continue;
+          for (const a of list) {
+            const dx = x - a[0], dy = y - a[1], rho2 = dx * dx + dy * dy;
+            if (rho2 >= nn2) continue;
+            const need = Math.sqrt(nn2 - rho2) - (b[2] - a[2]);
+            if (need > g) g = need;
+          }
+        }
+      }
+      return g;
+    }
+    let best = { s1: 0, s2: 0, g: gapFor(0, 0) };
+    const N = 10;                                                    // coarse grid, then pattern search
+    for (let i = -N; i <= N; i++) for (let j = -N; j <= N; j++) {
+      const s1 = i * range1 / N, s2 = j * range2 / N, g = gapFor(s1, s2);
+      if (g < best.g - 1e-9 || (Math.abs(g - best.g) < 1e-9 && s1 * s1 + s2 * s2 < best.s1 * best.s1 + best.s2 * best.s2)) best = { s1, s2, g };
+    }
+    let step = Math.max(range1, range2) / N;
+    while (step > 1e-4) {
+      let moved = false;
+      for (const [d1, d2] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        const s1 = best.s1 + d1 * step, s2 = best.s2 + d2 * step, g = gapFor(s1, s2);
+        if (g < best.g - 1e-12) { best = { s1, s2, g }; moved = true; }
+      }
+      if (!moved) step /= 2;
+    }
+    const T = t1.clone().multiplyScalar(best.s1).addScaledVector(t2, best.s2).addScaledVector(n, best.g);
+    // check: closest distance across the boundary after the shift
+    let dmin = Infinity;
+    for (const b of B) {
+      const x = b[0] + best.s1, y = b[1] + best.s2, z = b[2] + best.g, ci = Math.floor(x / cell), cj = Math.floor(y / cell);
+      for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+        const list = bins.get(keyOf(ci + di, cj + dj)); if (!list) continue;
+        for (const a of list) dmin = Math.min(dmin, Math.hypot(x - a[0], y - a[1], z - a[2]));
+      }
+    }
+    return { T, s1: best.s1, s2: best.s2, gap: best.g, dmin: dmin / nn };
+  }
+  // ---------- camera / interaction ----------
+  const TILTED = new THREE.Euler(-0.85, 0, 0.35, "XYZ");
+  let zoom = 1;
+  function render() {
+    const w = stage.clientWidth, h = Math.max(stage.clientHeight, 1), aspect = w / h;
+    const half = (state.L * 2.6 + 1.5) / zoom;
+    if (aspect >= 1) { camera.left = -half * aspect; camera.right = half * aspect; camera.top = half; camera.bottom = -half; }
+    else { camera.left = -half; camera.right = half; camera.top = half / aspect; camera.bottom = -half / aspect; }
+    camera.updateProjectionMatrix();
+    renderer.render(scene, camera);
+  }
+  new ResizeObserver(() => { renderer.setSize(stage.clientWidth, stage.clientHeight, false); render(); }).observe(stage);
+
+  const el = renderer.domElement;
+  let drag = null;
+  el.addEventListener("pointerdown", e => { drag = { x: e.clientX, y: e.clientY }; el.setPointerCapture(e.pointerId); });
+  el.addEventListener("pointermove", e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    drag.x = e.clientX; drag.y = e.clientY;
+    const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), dx * 0.008);
+    const qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), dy * 0.008);
+    root.quaternion.premultiply(qy).premultiply(qx);
+    render();
+  });
+  el.addEventListener("pointerup", () => { drag = null; });
+  el.addEventListener("wheel", e => { e.preventDefault(); zoom = Math.min(5, Math.max(0.4, zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1))); render(); }, { passive: false });
+  $("viewAxis").addEventListener("click", () => { root.quaternion.identity(); render(); });
+  $("viewTilt").addEventListener("click", () => {
+    root.quaternion.setFromEuler(TILTED); render();
+  });
+
+  // ---------- controls ----------
+  function reset() { state.joined = false; state.t = 0; if (anim) cancelAnimationFrame(anim); anim = null; }
+  function bind(slider, box, key, after) {
+    const s = $(slider), b = $(box);
+    const set = v => {
+      v = Math.min(+s.max, Math.max(+s.min, v)); if (!isFinite(v)) return;
+      state[key] = v; s.value = v; if (document.activeElement !== b) b.value = v;
+      if (after) after(); reset(); update();
+    };
+    s.addEventListener("input", () => { b.value = s.value; set(+s.value); });
+    b.addEventListener("change", () => set(+b.value));
+    return set;
+  }
+  const setTheta = bind("theta", "thetaNum", "theta", () => syncPreset());
+  const setPhi = bind("phi", "phiNum", "phi");
+  function fillPresets() {
+    const sel = $("preset");
+    sel.innerHTML = `<option value="">Choose a Σ boundary…</option>` +
+      PRESETS[state.axis].map(([s, a]) => `<option value="${a}">${s}: ${a.toFixed(2)}° (symmetric plane)</option>`).join("");
+    syncPreset();
+  }
+  function syncPreset() {
+    const sel = $("preset"), m = PRESETS[state.axis].find(([, a]) => Math.abs(a - state.theta) < 0.006);
+    sel.value = m ? String(m[1]) : "";
+  }
+  $("preset").addEventListener("change", e => {
+    if (!e.target.value) return;
+    const a = +e.target.value;
+    $("thetaNum").value = a; setTheta(a);
+    $("phiNum").value = +(a / 2).toFixed(5); setPhi(a / 2);
+  });
+  $("sym").addEventListener("click", () => { const v = state.theta / 2; $("phiNum").value = +v.toFixed(5); setPhi(v); });
+  $("sym2").addEventListener("click", () => { const v = (state.theta / 2 + 90) % 180; $("phiNum").value = +v.toFixed(5); setPhi(v); });
+
+  document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener("change", () => {
+    state.mode = r.value;
+    const twist = state.mode === "twist";
+    $("twistNote").hidden = !twist; $("tiltPlaneCtl").hidden = twist; $("tiltPlaneBtns").hidden = twist;
+    $("showPlaneLabel").textContent = twist ? " Show the boundary plane" : " Show the cutting plane";
+    buildLattice(); reset();
+    if (twist) root.quaternion.setFromEuler(TILTED); else root.quaternion.identity();   // a twist boundary is seen edge-on
+    update();
+  }));
+  document.querySelectorAll('input[name="lat"]').forEach(r => r.addEventListener("change", () => { state.lat = r.value; buildLattice(); reset(); update(); }));
+  document.querySelectorAll('input[name="axis"]').forEach(r => r.addEventListener("change", () => {
+    state.axis = r.value; buildLattice(); fillPresets();
+    const first = PRESETS[state.axis][0][1];
+    $("thetaNum").value = first; setTheta(first);
+    $("phiNum").value = +(first / 2).toFixed(5); setPhi(first / 2);
+    if (state.mode === "twist") root.quaternion.setFromEuler(TILTED); else root.quaternion.identity();
+    render();
+  }));
+  $("size").addEventListener("input", e => { state.L = +e.target.value; $("sizeOut").textContent = `${2 * state.L} a across`; buildLattice(); reset(); update(); });
+  $("showPlane").addEventListener("change", e => { state.showPlane = e.target.checked; update(); });
+
+  let anim = null;
+  function animateTo(goal) {
+    if (anim) cancelAnimationFrame(anim);
+    if (reduceMotion) { state.t = goal; state.joined = goal === 1; update(); return; }
+    const from = state.t, t0 = performance.now(), dur = 2200 * Math.abs(goal - from) + 1;
+    const step = now => {
+      const k = Math.min(1, (now - t0) / dur);
+      state.t = from + (goal - from) * k; state.joined = state.t > 0;
+      update();
+      if (k < 1) anim = requestAnimationFrame(step); else anim = null;
+    };
+    anim = requestAnimationFrame(step);
+  }
+  $("assemble").addEventListener("click", () => {
+    if (closeCache.key === setupKey()) { animateTo(1); return; }
+    $("closeNote").textContent = "Finding the rigid-body shift of crystal 2…";
+    setTimeout(() => { solve(); animateTo(1); }, 30);                  // let the note paint before the search runs
+  });
+  $("separate").addEventListener("click", () => animateTo(0));
+
+  function retheme() { makeMeshes(); update(); }
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", retheme);
+  new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+  $("sizeOut").textContent = `${2 * state.L} a across`;
+  buildLattice(); makeMeshes(); fillPresets(); update();
+})();
+</script>
+</body>
+</html>
