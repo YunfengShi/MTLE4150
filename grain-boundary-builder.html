@@ -409,7 +409,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
       `${state.lat.toUpperCase()} · axis [${state.axis.split("").join("")}] · ${twist ? "twist" : "tilt"}<br>θ = ${state.theta.toFixed(2)}°${preset ? " (" + preset[0] + ")" : ""}` +
       (twist ? "" : `<br>φ = ${state.phi.toFixed(2)}°`) +
       (!twist && state.joined && state.t >= 1 ? `<br>${symmetric() ? "symmetric" : "asymmetric"} tilt` : "");
-    const pkey = [state.mode, state.axis, state.theta, twist ? 0 : state.phi].join("|");
+    const pkey = [state.mode, state.lat, state.axis, state.theta, twist ? 0 : state.phi].join("|");
     if (planeCache.key !== pkey) { planeReadout(n, th); planeCache.key = pkey; }
     $("closeNote").innerHTML = done && fit
       ? `No atoms removed. Rigid-body translation: ${shiftNote}.<br>Closest pair across the boundary: ${isFinite(dmin) ? dmin.toFixed(3) : "–"} × nearest-neighbor distance.`
@@ -504,6 +504,10 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     closeCache = Object.assign({ key }, relax(k1, k2, n, t1, t2, NN[state.lat], 1, range2));
   }
 
+  // symmetric plane for a preset: θ/2 by default. For Σ3 about <110> both symmetric planes are twin mirrors:
+  // φ = θ/2 is a {112} plane (the BCC twin plane), φ = θ/2 + 90° is a {111} plane (the FCC coherent twin plane)
+  function isSigma3_110(a) { return state.axis === "110" && Math.abs(a - 70.5288) < 0.006; }
+  function presetPhi(a) { return isSigma3_110(a) && state.lat === "fcc" ? a / 2 + 90 : a / 2; }
   function symmetric() {
     const d = ((state.phi - state.theta / 2) % 90 + 90) % 90;
     return d < 0.01 || d > 89.99;
@@ -520,8 +524,14 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     const n2 = toCrystal(n2lab);
     const a = millerOf(n1), b = millerOf(n2);
     const show = (m) => m.deg < 0.05 ? fmtIdx(m.idx) : `≈ ${fmtIdx(m.idx)} (${m.deg.toFixed(1)}° off)`;
+    let twin = "";
+    if (state.mode === "tilt" && isSigma3_110(state.theta) && symmetric() && a.deg < 0.05) {
+      const fam = [a.idx.x, a.idx.y, a.idx.z].map(Math.abs).sort().join("");   // 111 or 112
+      if (fam === "111") twin = state.lat === "fcc" ? "<br>Σ3 {111} plane: the coherent twin boundary of FCC" : state.lat === "bcc" ? "<br>Σ3 {111} plane (BCC twins on {112}: φ = θ/2)" : "";
+      if (fam === "112") twin = state.lat === "bcc" ? "<br>Σ3 {112} plane: the twin boundary of BCC" : `<br>Σ3 {112} plane: the incoherent twin of ${state.lat.toUpperCase()}${state.lat === "fcc" ? " (coherent twin: φ = θ/2 + 90°)" : ""}`;
+    }
     $("planes").innerHTML = `Plane in crystal 1: ${show(a)}<br>Plane in crystal 2: ${show(b)}<br>` +
-      (state.mode === "twist" ? `Axis normal to the plane: twist boundary` : `Axis lies in the plane: tilt boundary`);
+      (state.mode === "twist" ? `Axis normal to the plane: twist boundary` : `Axis lies in the plane: tilt boundary`) + twin;
   }
 
 
@@ -632,7 +642,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   function fillPresets() {
     const sel = $("preset");
     sel.innerHTML = `<option value="">Choose a Σ boundary…</option>` +
-      PRESETS[state.axis].map(([s, a]) => `<option value="${a}">${s}: ${a.toFixed(2)}° (symmetric plane)</option>`).join("");
+      PRESETS[state.axis].map(([s, a]) => `<option value="${a}">${s}: ${a.toFixed(2)}° ${isSigma3_110(a)
+        ? "(twin: (111) plane in FCC, (112) in BCC)" : "(symmetric plane)"}</option>`).join("");
     syncPreset();
   }
   function syncPreset() {
@@ -643,7 +654,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     if (!e.target.value) return;
     const a = +e.target.value;
     $("thetaNum").value = a; setTheta(a);
-    $("phiNum").value = +(a / 2).toFixed(5); setPhi(a / 2);
+    const f = presetPhi(a); $("phiNum").value = +f.toFixed(5); setPhi(f);
   });
   $("sym").addEventListener("click", () => { const v = state.theta / 2; $("phiNum").value = +v.toFixed(5); setPhi(v); });
   $("sym2").addEventListener("click", () => { const v = (state.theta / 2 + 90) % 180; $("phiNum").value = +v.toFixed(5); setPhi(v); });
@@ -657,12 +668,18 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     if (twist && !state.csl) root.quaternion.setFromEuler(TILTED); else root.quaternion.identity();   // a twist boundary is seen edge-on
     update();
   }));
-  document.querySelectorAll('input[name="lat"]').forEach(r => r.addEventListener("change", () => { state.lat = r.value; buildLattice(); reset(); update(); }));
+  document.querySelectorAll('input[name="lat"]').forEach(r => r.addEventListener("change", () => {
+    state.lat = r.value; buildLattice(); reset();
+    if (isSigma3_110(state.theta) && symmetric()) {                 // keep the Σ3 preset on this lattice's twin plane
+      const f = presetPhi(state.theta); $("phiNum").value = +f.toFixed(5); setPhi(f);
+    }
+    update();
+  }));
   document.querySelectorAll('input[name="axis"]').forEach(r => r.addEventListener("change", () => {
     state.axis = r.value; buildLattice(); fillPresets();
     const first = PRESETS[state.axis][0][1];
     $("thetaNum").value = first; setTheta(first);
-    $("phiNum").value = +(first / 2).toFixed(5); setPhi(first / 2);
+    const f = presetPhi(first); $("phiNum").value = +f.toFixed(5); setPhi(f);
     if (state.mode === "twist" && !state.csl) root.quaternion.setFromEuler(TILTED); else root.quaternion.identity();
     render();
   }));
