@@ -107,6 +107,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
       <span><i style="background:var(--red)"></i>Crystal 1 (fixed)</span>
       <span><i style="background:var(--blue)"></i>Crystal 2 (rotated)</span>
       <span id="closeKey" hidden><i style="background:var(--close)"></i>Removed: too close across the boundary</span>
+      <span id="coinKey" hidden><i style="background:transparent;border:2px solid var(--fg)"></i>Coincident site</span>
     </div>
     <div class="readout" id="readout"></div>
     <div class="viewbar">
@@ -152,6 +153,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
         <label for="preset">CSL angles for this axis</label>
         <select id="preset"></select>
       </div>
+      <label class="check"><input type="checkbox" id="cslView"> CSL view: one atomic layer of each crystal, seen along the axis</label>
     </section>
 
     <section class="step">
@@ -211,7 +213,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   const v3 = (a) => new THREE.Vector3(a[0], a[1], a[2]);
 
   const state = { mode: "tilt", lat: "fcc", axis: "001", L: 5, theta: 36.8699, phi: 18.43495, joined: false, t: 0,
-                  showPlane: true };
+                  showPlane: true, csl: false };
 
   let M;                                        // rows e1, e2, e3: lab = M · crystal
   let period = 1;                               // repeat length along the axis
@@ -234,6 +236,18 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     }
     return best;
   }
+  let layer = [];                               // one atomic layer through the origin, perpendicular to the axis
+  function buildLayer() {
+    const L = state.L, R = Math.ceil(L * 1.8) + 2, basis = BASIS[state.lat];
+    layer = [];
+    for (let i = -R; i <= R; i++) for (let j = -R; j <= R; j++) for (let k = -R; k <= R; k++) for (const b of basis) {
+      const c = new THREE.Vector3(i + b[0], j + b[1], k + b[2]);
+      if (Math.abs(c.dot(M[2])) > 1e-6) continue;
+      const x = c.dot(M[0]), y = c.dot(M[1]);
+      if (Math.hypot(x, y) > L * 1.15) continue;                      // a round patch, so rotation does not show corners
+      layer.push(new THREE.Vector3(x, y, 0));
+    }
+  }
   function buildLattice() {
     M = frameMatrix();
     period = axisPeriod();
@@ -251,6 +265,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
       if (seen.has(key)) continue; seen.add(key);
       atoms.push(new THREE.Vector3(x, y, z - zshift));
     }
+    buildLayer();
   }
 
   // integer Miller-type indices for a direction given in cubic crystal axes
@@ -283,6 +298,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 
   const MAXN = 6000;
   const sphere = new THREE.SphereGeometry(1, 20, 14);
+  const ringGeo = new THREE.RingGeometry(1.3, 1.6, 40);              // flat ring in the layer plane (faces the axis)
   const mats = {};
   const mesh = {};
   function makeMeshes() {
@@ -293,10 +309,13 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     mats.redGhost = std(css("--red"), { transparent: true, opacity: 0.16, depthWrite: false });
     mats.blueGhost = std(css("--blue"), { transparent: true, opacity: 0.16, depthWrite: false });
     mats.close = std(css("--close"), { emissive: new THREE.Color(css("--close")), emissiveIntensity: 0.25 });
+    mats.redLayer = std(css("--red"), { transparent: true, opacity: 0.55, depthWrite: false });
+    mats.blueLayer = std(css("--blue"), { transparent: true, opacity: 0.55, depthWrite: false });
+    mats.ring = new THREE.MeshBasicMaterial({ color: css("--fg"), side: THREE.DoubleSide });
     mats.plane = new THREE.MeshBasicMaterial({ color: css("--plane"), transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false });
     mats.planeEdge = new THREE.LineBasicMaterial({ color: css("--plane") });
-    for (const k of ["red", "blue", "redGhost", "blueGhost", "close"]) {
-      mesh[k] = new THREE.InstancedMesh(sphere, mats[k], MAXN);
+    for (const k of ["red", "blue", "redGhost", "blueGhost", "close", "redLayer", "blueLayer", "ring"]) {
+      mesh[k] = new THREE.InstancedMesh(k === "ring" ? ringGeo : sphere, mats[k], MAXN);
       mesh[k].count = 0;
       mesh[k].instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       root.add(mesh[k]);
@@ -316,6 +335,11 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   let closeCache = { key: "" }, planeCache = { key: "" };
 
   function update() {
+    const lv = state.csl;
+    for (const k of ["redLayer", "blueLayer", "ring"]) mesh[k].visible = lv;
+    for (const k of ["red", "blue", "redGhost", "blueGhost", "close"]) mesh[k].visible = !lv && k !== "close";
+    $("coinKey").hidden = !lv;
+    if (lv) { drawLayers(); return; }
     const th = state.theta * Math.PI / 180, ph = state.phi * Math.PI / 180;
     const twist = state.mode === "twist";
     const n = twist ? new THREE.Vector3(0, 0, 1)                   // twist: plane normal along the axis
@@ -386,6 +410,70 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     $("closeNote").innerHTML = done && fit
       ? `No atoms removed. Rigid-body translation: ${shiftNote}.<br>Closest pair across the boundary: ${isFinite(dmin) ? dmin.toFixed(3) : "–"} × nearest-neighbor distance.`
       : "Assemble to join the halves. Crystal 2 is shifted as a rigid body so the closest pair across the boundary is exactly one nearest-neighbor distance.";
+    render();
+  }
+
+  // CSL view: one full layer of each crystal superimposed, coincident sites circled
+  let cslCache = { key: "" };
+  function drawLayers() {
+    const th = state.theta * Math.PI / 180, nn = NN[state.lat], r = 0.28 * nn;
+    const Rz = new THREE.Matrix4().makeRotationZ(th);
+    const blue = layer.map(p => p.clone().applyMatrix4(Rz));
+    const key = [state.lat, state.axis, state.L, state.theta].join("|");
+    if (cslCache.key !== key) {
+      const h = 0.25 * nn, tol = 0.02 * nn, kf = (i, j) => i * 100003 + j;
+      const binsOf = (pts) => { const m = new Map(); for (const p of pts) { const k = kf(Math.floor(p.x / h), Math.floor(p.y / h)); if (!m.has(k)) m.set(k, []); m.get(k).push(p); } return m; };
+      const coincident = (pts, qs, bins) => qs.filter(q => {
+        const ci = Math.floor(q.x / h), cj = Math.floor(q.y / h);
+        for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+          const list = bins.get(kf(ci + di, cj + dj)); if (!list) continue;
+          for (const p of list) if (Math.hypot(p.x - q.x, p.y - q.y) < tol) return true;
+        }
+        return false;
+      });
+      const bins = binsOf(layer);
+      const coin = coincident(layer, blue, bins);
+      // planar Σ is measured on a much larger patch than the one drawn, so large CSL cells are found too:
+      // primitive in-plane vectors (the shortest pair spanning the smallest cell) generate a 14 a-radius layer
+      const vs = layer.filter(p => p.lengthSq() > 1e-9).sort((a, b) => a.lengthSq() - b.lengthSq()).slice(0, 16);
+      let u = null, v = null, Acell = Infinity;
+      for (let i = 0; i < vs.length; i++) for (let j = i + 1; j < vs.length; j++) {
+        const A = Math.abs(vs[i].x * vs[j].y - vs[i].y * vs[j].x);
+        if (A > 1e-6 && A < Acell - 1e-9) { Acell = A; u = vs[i]; v = vs[j]; }
+      }
+      const RB = 14, big = [], nmax = Math.ceil(RB / Math.min(u.length(), v.length())) * 3;
+      for (let i = -nmax; i <= nmax; i++) for (let j = -nmax; j <= nmax; j++) {
+        const x = i * u.x + j * v.x, y = i * u.y + j * v.y;
+        if (Math.hypot(x, y) <= RB) big.push(new THREE.Vector3(x, y, 0));
+      }
+      const bigCoin = coincident(big, big.map(p => p.clone().applyMatrix4(Rz)), binsOf(big));
+      // planar Σ = area of the primitive CSL cell / area of the layer's primitive cell
+      // (the smallest non-zero parallelogram spanned by two coincident vectors, resp. two layer vectors)
+      const minArea = (pts, take) => {
+        const v = pts.filter(p => p.lengthSq() > 1e-9).sort((a, b) => a.lengthSq() - b.lengthSq()).slice(0, take);
+        let m = Infinity;
+        for (let i = 0; i < v.length; i++) for (let j = i + 1; j < v.length; j++) {
+          const A = Math.abs(v[i].x * v[j].y - v[i].y * v[j].x);
+          if (A > 1e-6 && A < m) m = A;
+        }
+        return m;
+      };
+      const Acsl = minArea(bigCoin, 60);
+      const sigma = isFinite(Acsl) ? Math.round(Acsl / Acell) : NaN;
+      cslCache = { key, coin, sigma };
+    }
+    fill(mesh.redLayer, layer, r);
+    fill(mesh.blueLayer, blue, r);
+    fill(mesh.ring, cslCache.coin, r);
+    for (const k of ["red", "blue", "redGhost", "blueGhost", "close"]) mesh[k].count = 0;
+    root.remove(planeGroup); planeGroup = new THREE.Group(); root.add(planeGroup);
+    const preset = PRESETS[state.axis].find(([, a]) => Math.abs(a - state.theta) < 0.006);
+    $("readout").innerHTML = `${state.lat.toUpperCase()} · one layer ⊥ [${state.axis}]<br>θ = ${state.theta.toFixed(2)}°${preset ? " (" + preset[0] + ")" : ""}` +
+      `<br>planar Σ = ${isFinite(cslCache.sigma) ? cslCache.sigma : "–"}`;
+    const sig = cslCache.sigma, s3 = preset ? +preset[0].slice(1) : NaN;
+    $("closeNote").innerHTML = `CSL view: the (${state.axis}) layer through the origin from each crystal, superimposed. ` +
+      (isFinite(sig) ? `One site in ${sig} of this layer is a coincident site (planar Σ = ${sig}).` : `No coincident sites besides the origin in view.`) +
+      (isFinite(sig) && isFinite(s3) && sig !== s3 ? ` The 3D boundary is Σ${s3}: the difference comes from how the (${state.axis}) layers stack.` : "");
     render();
   }
 
@@ -562,7 +650,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     $("twistNote").hidden = !twist; $("tiltPlaneCtl").hidden = twist; $("tiltPlaneBtns").hidden = twist;
     $("showPlaneLabel").textContent = twist ? " Show the boundary plane" : " Show the cutting plane";
     buildLattice(); reset();
-    if (twist) root.quaternion.setFromEuler(TILTED); else root.quaternion.identity();   // a twist boundary is seen edge-on
+    if (twist && !state.csl) root.quaternion.setFromEuler(TILTED); else root.quaternion.identity();   // a twist boundary is seen edge-on
     update();
   }));
   document.querySelectorAll('input[name="lat"]').forEach(r => r.addEventListener("change", () => { state.lat = r.value; buildLattice(); reset(); update(); }));
@@ -571,10 +659,16 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     const first = PRESETS[state.axis][0][1];
     $("thetaNum").value = first; setTheta(first);
     $("phiNum").value = +(first / 2).toFixed(5); setPhi(first / 2);
-    if (state.mode === "twist") root.quaternion.setFromEuler(TILTED); else root.quaternion.identity();
+    if (state.mode === "twist" && !state.csl) root.quaternion.setFromEuler(TILTED); else root.quaternion.identity();
     render();
   }));
   $("size").addEventListener("input", e => { state.L = +e.target.value; $("sizeOut").textContent = `${2 * state.L} a across`; buildLattice(); reset(); update(); });
+  $("cslView").addEventListener("change", e => {
+    state.csl = e.target.checked;
+    if (state.csl) { reset(); root.quaternion.identity(); }          // the layer lies in the screen plane
+    else if (state.mode === "twist") root.quaternion.setFromEuler(TILTED);
+    update();
+  });
   $("showPlane").addEventListener("change", e => { state.showPlane = e.target.checked; update(); });
 
   let anim = null;
@@ -591,6 +685,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     anim = requestAnimationFrame(step);
   }
   $("assemble").addEventListener("click", () => {
+    if (state.csl) { state.csl = false; $("cslView").checked = false; update(); }
     if (closeCache.key === setupKey()) { animateTo(1); return; }
     $("closeNote").textContent = "Finding the rigid-body shift of crystal 2…";
     setTimeout(() => { solve(); animateTo(1); }, 30);                  // let the note paint before the search runs
