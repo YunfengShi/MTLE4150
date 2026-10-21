@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Grain Boundary Migration</title>
+<meta name="description" content="Molecular dynamics of grain boundary migration in a 2D Lennard-Jones crystal: a shrinking circular grain and a coarsening polycrystal at adjustable temperature. MTLE 4150, Professor Yunfeng Shi, RPI.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,600&display=swap">
+<style>
+/* Layout: the simulation box fills the bench; the controls follow the order of an experiment (sample, temperature, how to look, what to measure) */
+:root {
+  --bg: #eef1f4;
+  --panel: #fbfcfd;
+  --fg: #18212c;
+  --muted: #5a6574;
+  --line: #d5dbe3;
+  --accent: #c4471c;
+  --scene: #ffffff;
+  --cn6: #c8d0db;          /* bulk: six neighbors */
+  --cn5: #2166c4;          /* five neighbors */
+  --cn7: #d63027;          /* seven neighbors */
+  --cn4: #e39a12;          /* four or fewer */
+  --cn8: #7b3fb5;          /* eight or more */
+  --plain: #7f8da0;
+  --plot: #c4471c;
+  --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f141b; --panel: #161d26; --fg: #e5eaf0; --muted: #96a2b2; --line: #29323e;
+    --accent: #ff7a4a; --scene: #121821; --cn6: #364253; --cn5: #5aa0ff; --cn7: #ff5c50; --cn4: #ffc23d; --cn8: #c08cff;
+    --plain: #8a99ad; --plot: #ff7a4a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f141b; --panel: #161d26; --fg: #e5eaf0; --muted: #96a2b2; --line: #29323e;
+  --accent: #ff7a4a; --scene: #121821; --cn6: #364253; --cn5: #5aa0ff; --cn7: #ff5c50; --cn4: #ffc23d; --cn8: #c08cff;
+  --plain: #8a99ad; --plot: #ff7a4a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+.code { font: 500 13px var(--font-mono); letter-spacing: .08em; color: var(--accent); }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 28px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 14px; }
+h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(26px, 3.4vw, 34px); line-height: 1.1; margin: 0; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); max-width: 80ch; }
+.stage { position: relative; background: var(--scene); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  height: min(66vh, 640px); min-height: 340px; }
+.stage canvas { display: block; width: 100%; height: 100%; }
+.key { position: absolute; left: 12px; top: 12px; display: grid; gap: 4px; font-size: 13px;
+  background: color-mix(in srgb, var(--scene) 85%, transparent); padding: 8px 10px; border-radius: 8px; }
+.key span { display: flex; align-items: center; gap: 8px; }
+.key i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; }
+.key .wheel { width: 120px; height: 10px; border-radius: 5px;
+  background: linear-gradient(90deg, hsl(0 65% 55%), hsl(60 65% 55%), hsl(120 65% 55%), hsl(180 65% 55%), hsl(240 65% 55%), hsl(300 65% 55%), hsl(360 65% 55%)); }
+.key .ticks { display: flex; justify-content: space-between; width: 120px; font: 11px var(--font-mono); color: var(--muted); }
+.readout { position: absolute; right: 12px; top: 12px; font: 12.5px/1.55 var(--font-mono); text-align: right;
+  background: color-mix(in srgb, var(--scene) 85%, transparent); padding: 8px 10px; border-radius: 8px; font-variant-numeric: tabular-nums; }
+.runbar { position: absolute; left: 12px; bottom: 12px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 980px) { .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) {
+  .steps { grid-template-columns: minmax(0, 1fr); }
+  /* phone: legend and readout stack above the box instead of covering it */
+  .stage { height: auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; padding: 10px; }
+  .stage canvas { grid-column: 1 / -1; grid-row: 2; aspect-ratio: 1; height: auto; }
+  .key, .readout, .runbar { position: static; padding: 0; background: none; }
+  .key { font-size: 12px; }
+  .readout { font-size: 11px; }
+  .runbar { grid-column: 1 / -1; grid-row: 3; }
+}
+.step { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.step h2 { margin: 0; font: 600 13.5px/1.2 var(--font-body); display: flex; gap: 8px; align-items: center; }
+.step h2 b { font: 600 12px/1 var(--font-mono); width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center;
+  background: var(--fg); color: var(--panel); flex: none; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; border: 0; margin: 0; padding: 0; min-width: 0; }
+.seg legend { font-size: 12.5px; color: var(--muted); padding: 0; margin-bottom: 4px; width: 100%; }
+.seg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.seg span { display: inline-block; font: 500 13px/1 var(--font-body); padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; background: var(--panel); }
+.seg input:checked + span { background: var(--fg); color: var(--panel); border-color: var(--fg); }
+.seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field label { font-size: 13px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.field input[type="number"] { width: 5.4em; font: 13px var(--font-mono); padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--scene); color: var(--fg); text-align: right; }
+.field output, .note { font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.note { margin: 0; line-height: 1.5; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.check input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; flex: none; }
+.btn { font: 600 13px/1 var(--font-body); padding: 9px 13px; border-radius: 8px; cursor: pointer; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
+.btn.primary { background: var(--fg); color: var(--panel); border-color: var(--fg); }
+.btn.small { padding: 6px 10px; font-weight: 500; }
+.btn:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.chart { width: 100%; height: 150px; display: block; }
+.fit { font: 12.5px/1.5 var(--font-mono); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header style="display:grid;gap:4px">
+    <div class="code">MTLE 4150</div>
+    <h1>Grain Boundary Migration</h1>
+  </header>
+  <p class="lede">A two-dimensional crystal of atoms bonded by a short-ranged Lennard-Jones potential, run by molecular dynamics at constant temperature. Boundaries move toward their center of curvature, which removes boundary length: an embedded grain shrinks and disappears, and a polycrystal coarsens. Atoms with six neighbors are bulk crystal; five- and seven-fold atoms mark the boundaries.</p>
+
+  <div class="stage" id="stage">
+    <canvas id="view" aria-label="Simulation box with atoms colored by coordination number"></canvas>
+    <div class="key" id="keyCN">
+      <span><i style="background:var(--cn4)"></i>≤ 4 neighbors</span>
+      <span><i style="background:var(--cn5)"></i>5 neighbors</span>
+      <span><i style="background:var(--cn6);outline:1px solid var(--line)"></i>6 neighbors (bulk)</span>
+      <span><i style="background:var(--cn7)"></i>7 neighbors</span>
+      <span><i style="background:var(--cn8)"></i>≥ 8 neighbors</span>
+    </div>
+    <div class="key" id="keyOri" hidden>
+      <span>Lattice orientation</span>
+      <span class="wheel"></span>
+      <span class="ticks"><span>0°</span><span>30°</span><span>60°</span></span>
+      <span><i style="background:var(--cn6);outline:1px solid var(--line)"></i>disordered</span>
+    </div>
+    <div class="readout" id="readout"></div>
+    <div class="runbar">
+      <button class="btn primary small" id="run" type="button">Pause</button>
+      <button class="btn small" id="restart" type="button">Restart this sample</button>
+    </div>
+  </div>
+
+  <div class="steps">
+    <section class="step">
+      <h2><b>1</b>Starting microstructure</h2>
+      <fieldset class="seg">
+        <legend>Sample</legend>
+        <label><input type="radio" name="mode" value="circle" checked><span>Circular grain</span></label>
+        <label><input type="radio" name="mode" value="poly"><span>Polycrystal</span></label>
+      </fieldset>
+      <div class="field" id="misField">
+        <label for="mis">Misorientation <output id="misOut">20°</output></label>
+        <input type="range" id="mis" min="2" max="30" step="1" value="20">
+      </div>
+      <div class="field" id="radField">
+        <label for="radius">Grain radius <output id="radiusOut">0.60 × half box</output></label>
+        <input type="range" id="radius" min="0.2" max="0.8" step="0.05" value="0.6">
+      </div>
+      <div class="field" id="grainField" hidden>
+        <label for="grains">Number of grains <output id="grainsOut">6</output></label>
+        <input type="range" id="grains" min="2" max="16" step="1" value="6">
+      </div>
+      <fieldset class="seg">
+        <legend>System size</legend>
+        <label><input type="radio" name="size" value="S"><span>≈ 1,800 atoms</span></label>
+        <label><input type="radio" name="size" value="M" checked><span>≈ 4,200</span></label>
+        <label><input type="radio" name="size" value="L"><span>≈ 8,000</span></label>
+      </fieldset>
+      <button class="btn primary" id="newSample" type="button">New sample</button>
+    </section>
+
+    <section class="step">
+      <h2><b>2</b>Temperature (NVT)</h2>
+      <div class="field">
+        <label for="T"><span>Temperature k<sub>B</sub>T/ε</span> <input type="number" id="TNum" min="0.02" max="0.8" step="0.01" value="0.30" aria-label="Temperature value"></label>
+        <input type="range" id="T" min="0.02" max="0.8" step="0.01" value="0.30">
+      </div>
+      <div class="field">
+        <label for="speed">MD steps per frame <output id="speedOut">25</output></label>
+        <input type="range" id="speed" min="1" max="80" step="1" value="25">
+      </div>
+      <p class="note">Langevin thermostat, friction 1/τ, time step 0.01 τ. The box keeps its T = 0 size, so the crystal stays solid well above k<sub>B</sub>T/ε = 0.8.</p>
+    </section>
+
+    <section class="step">
+      <h2><b>3</b>Color the atoms</h2>
+      <fieldset class="seg">
+        <legend>Color by</legend>
+        <label><input type="radio" name="color" value="cn" checked><span>Coordination</span></label>
+        <label><input type="radio" name="color" value="ori"><span>Orientation</span></label>
+        <label><input type="radio" name="color" value="plain"><span>One color</span></label>
+      </fieldset>
+      <label class="check"><input type="checkbox" id="smooth" checked> Average positions over 1 τ (hides thermal jitter)</label>
+      <p class="note">Neighbors are atoms closer than 1.45σ, between the first (1.12σ) and second (1.94σ) neighbor shells.</p>
+    </section>
+
+    <section class="step">
+      <h2><b>4</b><span id="chartTitle">Embedded grain area</span></h2>
+      <canvas class="chart" id="chart" aria-label="History plot"></canvas>
+      <div class="fit" id="fit"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+// ---------- MD core: 2D Lennard-Jones crystal, Langevin NVT ----------
+// Reduced LJ units: σ = ε = m = kB = 1, time in τ = σ√(m/ε).
+// Short range: the LJ pair term is switched smoothly to zero between RS and RC, so only nearest neighbors interact
+// (second neighbors of the triangular lattice sit at √3·r0 ≈ 1.94σ, beyond RC).
+const R0 = Math.pow(2, 1 / 6);        // LJ minimum = nearest-neighbor distance at T = 0
+const RS = 1.5, RC = 1.8;             // switching region
+const RC2 = RC * RC, RS2 = RS * RS;
+const SKIN = 0.3, RL = RC + SKIN, RL2 = RL * RL;   // Verlet neighbor list: rebuilt when any atom has moved SKIN/2
+const RCN = 1.45;                     // coordination cutoff, between first (1.12σ) and second (1.94σ) neighbors
+const RCN2 = RCN * RCN;
+const SIZES = { S: [40, 46], M: [60, 70], L: [84, 96] };   // [nx, ny]: box = nx·r0 by ny·(√3/2)r0, commensurate with the 0° lattice
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function createSim(opt) {
+  const rnd = mulberry32(opt.seed >>> 0);
+  const [nx, ny] = SIZES[opt.size];
+  const Lx = nx * R0, Ly = ny * R0 * Math.sqrt(3) / 2;
+  const wrap = (v, L) => v - L * Math.floor(v / L);
+  const mi = (d, L) => d - L * Math.round(d / L);
+
+  // ----- initial microstructure -----
+  const px = [], py = [], grainOf = [];
+  // fill a region with a triangular lattice rotated by th about center (cx, cy); keep(dx, dy) tests the unwrapped offset
+  function fill(th, cx, cy, ext, keep, g) {
+    const c = Math.cos(th), s = Math.sin(th), h = R0 * Math.sqrt(3) / 2;
+    const n = Math.ceil(ext / h) + 2;
+    for (let j = -n; j <= n; j++) for (let i = -n - Math.ceil(n / 2); i <= n + Math.ceil(n / 2); i++) {
+      const lx = (i + 0.5 * j) * R0, ly = j * h;
+      const dx = c * lx - s * ly, dy = s * lx + c * ly;
+      if (Math.abs(dx) > ext || Math.abs(dy) > ext) continue;
+      if (!keep(dx, dy)) continue;
+      px.push(wrap(cx + dx, Lx)); py.push(wrap(cy + dy, Ly)); grainOf.push(g);
+    }
+  }
+  const grains = [];                  // {th} orientation of each grain, for analysis
+  if (opt.mode === "circle") {
+    const R = opt.radius * Math.min(Lx, Ly) / 2, cx = Lx / 2, cy = Ly / 2;
+    const th = opt.mis * Math.PI / 180;
+    grains.push({ th: 0 }, { th });
+    // matrix: the 0° lattice tiles the periodic box exactly
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const x = wrap((i + 0.5 * (j % 2)) * R0 + 0.25 * R0, Lx), y = (j + 0.5) * R0 * Math.sqrt(3) / 2;
+      if (Math.hypot(mi(x - cx, Lx), mi(y - cy, Ly)) >= R) { px.push(x); py.push(y); grainOf.push(0); }
+    }
+    fill(th, cx, cy, R + 1, (dx, dy) => Math.hypot(dx, dy) < R, 1);
+  } else {
+    // polycrystal: periodic Voronoi cells around random seeds, each filled with its own lattice
+    const n = opt.grains, seeds = [];
+    for (let k = 0; k < n; k++) {
+      seeds.push([rnd() * Lx, rnd() * Ly]);
+      grains.push({ th: rnd() * Math.PI / 3 });
+    }
+    for (let k = 0; k < n; k++) {
+      const [cx, cy] = seeds[k];
+      fill(grains[k].th, cx, cy, Math.max(Lx, Ly) / 2, (dx, dy) => {
+        if (Math.abs(dx) >= Lx / 2 || Math.abs(dy) >= Ly / 2) return false;
+        const x = cx + dx, y = cy + dy, d0 = dx * dx + dy * dy;
+        for (let m = 0; m < n; m++) if (m !== k) {
+          const ex = mi(x - seeds[m][0], Lx), ey = mi(y - seeds[m][1], Ly);
+          if (ex * ex + ey * ey < d0) return false;
+        }
+        return true;
+      }, k);
+    }
+  }
+
+  // remove overlaps at the boundaries: drop an atom closer than 0.8 r0 to one already kept
+  const ncx = Math.max(3, Math.floor(Lx / RL)), ncy = Math.max(3, Math.floor(Ly / RL));
+  const cwx = Lx / ncx, cwy = Ly / ncy;
+  {
+    const grid = new Map(), keepIdx = [], dmin2 = (0.8 * R0) ** 2;
+    const order = px.map((_, i) => i).sort(() => rnd() - 0.5);
+    for (const i of order) {
+      const ci = Math.floor(px[i] / cwx) % ncx, cj = Math.floor(py[i] / cwy) % ncy;
+      let ok = true;
+      for (let di = -1; di <= 1 && ok; di++) for (let dj = -1; dj <= 1 && ok; dj++) {
+        const list = grid.get(((ci + di + ncx) % ncx) * ncy + (cj + dj + ncy) % ncy);
+        if (list) for (const k of list) {
+          const dx = mi(px[i] - px[k], Lx), dy = mi(py[i] - py[k], Ly);
+          if (dx * dx + dy * dy < dmin2) { ok = false; break; }
+        }
+      }
+      if (!ok) continue;
+      const key = ci * ncy + cj;
+      if (!grid.has(key)) grid.set(key, []);
+      grid.get(key).push(i); keepIdx.push(i);
+    }
+    keepIdx.sort((a, b) => a - b);
+    const nx2 = keepIdx.map(i => px[i]), ny2 = keepIdx.map(i => py[i]), g2 = keepIdx.map(i => grainOf[i]);
+    px.length = py.length = grainOf.length = 0;
+    px.push(...nx2); py.push(...ny2); grainOf.push(...g2);
+  }
+
+  const N = px.length;
+  const x = Float64Array.from(px), y = Float64Array.from(py);
+  const vx = new Float64Array(N), vy = new Float64Array(N), fx = new Float64Array(N), fy = new Float64Array(N);
+  const xs = Float64Array.from(px), ys = Float64Array.from(py);    // time-averaged positions, for display analysis
+  const head = new Int32Array(ncx * ncy), next = new Int32Array(N);
+  const cn = new Uint8Array(N), psiRe = new Float32Array(N), psiIm = new Float32Array(N);
+  const sim = { N, Lx, Ly, x, y, vx, vy, xs, ys, cn, psiRe, psiIm, grains, grainOf: Int16Array.from(grainOf),
+                T: opt.T, gamma: 1.0, dt: 0.01, time: 0, steps: 0, epot: 0, mode: opt.mode, mis: opt.mis };
+
+  function buildCells(X, Y) {
+    head.fill(-1);
+    for (let i = 0; i < N; i++) {
+      let ci = Math.floor(X[i] / cwx), cj = Math.floor(Y[i] / cwy);
+      if (ci >= ncx) ci = ncx - 1; if (ci < 0) ci = 0; if (cj >= ncy) cj = ncy - 1; if (cj < 0) cj = 0;
+      const c = ci * ncy + cj; next[i] = head[c]; head[c] = i;
+    }
+  }
+  // half stencil: own cell plus four neighbors, each pair visited once
+  const ST = [[0, 0], [1, 0], [1, 1], [0, 1], [-1, 1]];
+  let pairs = new Int32Array(16 * N), npair = 0;
+  const x0 = new Float64Array(N), y0 = new Float64Array(N);
+  function buildPairs() {
+    buildCells(x, y);
+    npair = 0;
+    const hx = Lx / 2, hy = Ly / 2;
+    for (let ci = 0; ci < ncx; ci++) for (let cj = 0; cj < ncy; cj++) {
+      const c0 = ci * ncy + cj;
+      for (let s = 0; s < 5; s++) {
+        const c1 = ((ci + ST[s][0] + ncx) % ncx) * ncy + (cj + ST[s][1] + ncy) % ncy;
+        for (let i = head[c0]; i >= 0; i = next[i]) {
+          for (let j = s === 0 ? next[i] : head[c1]; j >= 0; j = next[j]) {
+            let dx = x[i] - x[j], dy = y[i] - y[j];
+            if (dx > hx) dx -= Lx; else if (dx < -hx) dx += Lx;
+            if (dy > hy) dy -= Ly; else if (dy < -hy) dy += Ly;
+            if (dx * dx + dy * dy >= RL2) continue;
+            if (npair * 2 + 2 > pairs.length) { const p2 = new Int32Array(pairs.length * 2); p2.set(pairs); pairs = p2; }
+            pairs[2 * npair] = i; pairs[2 * npair + 1] = j; npair++;
+          }
+        }
+      }
+    }
+    x0.set(x); y0.set(y);
+  }
+  function needRebuild() {
+    const lim = (SKIN / 2) ** 2, hx = Lx / 2, hy = Ly / 2;
+    for (let i = 0; i < N; i++) {
+      let dx = x[i] - x0[i], dy = y[i] - y0[i];
+      if (dx > hx) dx -= Lx; else if (dx < -hx) dx += Lx;
+      if (dy > hy) dy -= Ly; else if (dy < -hy) dy += Ly;
+      if (dx * dx + dy * dy > lim) return true;
+    }
+    return false;
+  }
+  function forces(rebuild) {
+    if (rebuild || needRebuild()) buildPairs();
+    fx.fill(0); fy.fill(0);
+    let ep = 0;
+    const hx = Lx / 2, hy = Ly / 2, w = RC - RS;
+    for (let p = 0; p < npair; p++) {
+      const i = pairs[2 * p], j = pairs[2 * p + 1];
+      let dx = x[i] - x[j], dy = y[i] - y[j];
+      if (dx > hx) dx -= Lx; else if (dx < -hx) dx += Lx;
+      if (dy > hy) dy -= Ly; else if (dy < -hy) dy += Ly;
+      const r2 = dx * dx + dy * dy;
+      if (r2 >= RC2) continue;
+      const ir2 = 1 / r2, ir6 = ir2 * ir2 * ir2;
+      const u = 4 * ir6 * (ir6 - 1);
+      let f = 24 * ir6 * (2 * ir6 - 1) * ir2;              // −(dU/dr)/r
+      let uu = u;
+      if (r2 > RS2) {
+        const r = Math.sqrt(r2), t = (r - RS) / w;
+        const S = 1 - t * t * t * (10 - 15 * t + 6 * t * t);
+        const dS = -30 * t * t * (1 - t) * (1 - t) / w;
+        f = f * S - u * dS / r; uu = u * S;
+      }
+      ep += uu;
+      fx[i] += f * dx; fy[i] += f * dy; fx[j] -= f * dx; fy[j] -= f * dy;
+    }
+    sim.epot = ep / N;
+  }
+
+  // gentle start: remove leftover overlaps by damped steps with capped displacements
+  forces(true);
+  for (let it = 0; it < 200; it++) {
+    for (let i = 0; i < N; i++) {
+      let dx = fx[i] * 1e-3, dy = fy[i] * 1e-3;
+      const d = Math.hypot(dx, dy); if (d > 0.03) { dx *= 0.03 / d; dy *= 0.03 / d; }
+      x[i] = wrap(x[i] + dx, Lx); y[i] = wrap(y[i] + dy, Ly);
+    }
+    forces();
+  }
+  xs.set(x); ys.set(y);
+  // Maxwell–Boltzmann velocities at T
+  let spare = null;
+  const gauss = () => {
+    if (spare !== null) { const g = spare; spare = null; return g; }
+    let u = 0, v = 0; while (u === 0) u = Math.random(); v = Math.random();
+    const m = Math.sqrt(-2 * Math.log(u)); spare = m * Math.sin(2 * Math.PI * v); return m * Math.cos(2 * Math.PI * v);
+  };
+  for (let i = 0; i < N; i++) { vx[i] = Math.sqrt(opt.T) * gauss(); vy[i] = Math.sqrt(opt.T) * gauss(); }
+
+  // BAOAB Langevin step (NVT)
+  sim.step = function (n) {
+    const dt = sim.dt, hdt = dt / 2, c1 = Math.exp(-sim.gamma * dt), c2u = Math.sqrt(12 * (1 - c1 * c1) * sim.T);   // uniform noise with unit variance after scaling: cheaper than Gaussian, same NVT limit
+    for (let k = 0; k < n; k++) {
+      for (let i = 0; i < N; i++) {
+        vx[i] += hdt * fx[i]; vy[i] += hdt * fy[i];
+        x[i] += hdt * vx[i]; y[i] += hdt * vy[i];
+        vx[i] = c1 * vx[i] + c2u * (Math.random() - 0.5); vy[i] = c1 * vy[i] + c2u * (Math.random() - 0.5);
+        x[i] += hdt * vx[i]; y[i] += hdt * vy[i];
+        if (x[i] < 0) x[i] += Lx; else if (x[i] >= Lx) x[i] -= Lx;
+        if (y[i] < 0) y[i] += Ly; else if (y[i] >= Ly) y[i] -= Ly;
+      }
+      forces();
+      for (let i = 0; i < N; i++) { vx[i] += hdt * fx[i]; vy[i] += hdt * fy[i]; }
+      sim.time += dt; sim.steps++;
+    }
+  };
+  sim.kineticT = function () {
+    let k = 0; for (let i = 0; i < N; i++) k += vx[i] * vx[i] + vy[i] * vy[i];
+    return k / (2 * N);                       // 2D: ⟨½mv²⟩ = kBT per atom
+  };
+  // exponential running average of positions over time constant tau (in τ), for a steadier picture
+  sim.smooth = function (elapsed, tau) {
+    const a = tau > 0 ? 1 - Math.exp(-elapsed / tau) : 1;
+    for (let i = 0; i < N; i++) {
+      xs[i] = wrap(xs[i] + a * mi(x[i] - xs[i], Lx), Lx);
+      ys[i] = wrap(ys[i] + a * mi(y[i] - ys[i], Ly), Ly);
+    }
+  };
+  // coordination number and bond-orientational order ψ6 = ⟨exp(6iθ)⟩ over neighbors, from the averaged positions
+  sim.analyze = function () {
+    buildCells(xs, ys);
+    cn.fill(0); psiRe.fill(0); psiIm.fill(0);
+    const hx = Lx / 2, hy = Ly / 2;
+    for (let ci = 0; ci < ncx; ci++) for (let cj = 0; cj < ncy; cj++) {
+      const c0 = ci * ncy + cj;
+      for (let s = 0; s < 5; s++) {
+        const c1 = ((ci + ST[s][0] + ncx) % ncx) * ncy + (cj + ST[s][1] + ncy) % ncy;
+        for (let i = head[c0]; i >= 0; i = next[i]) {
+          for (let j = s === 0 ? next[i] : head[c1]; j >= 0; j = next[j]) {
+            let dx = xs[j] - xs[i], dy = ys[j] - ys[i];
+            if (dx > hx) dx -= Lx; else if (dx < -hx) dx += Lx;
+            if (dy > hy) dy -= Ly; else if (dy < -hy) dy += Ly;
+            const r2 = dx * dx + dy * dy;
+            if (r2 >= RCN2) continue;
+            cn[i]++; cn[j]++;
+            const a = 6 * Math.atan2(dy, dx), c = Math.cos(a), sn = Math.sin(a);   // 6θ is the same for i→j and j→i
+            psiRe[i] += c; psiIm[i] += sn; psiRe[j] += c; psiIm[j] += sn;
+          }
+        }
+      }
+    }
+    let defects = 0;
+    for (let i = 0; i < N; i++) {
+      if (cn[i]) { psiRe[i] /= cn[i]; psiIm[i] /= cn[i]; }
+      if (cn[i] !== 6) defects++;
+    }
+    sim.defects = defects;
+    // embedded grain: atoms with good local order whose orientation is closer to the grain's than to the matrix's
+    if (sim.mode === "circle") {
+      const thIn = sim.grains[1].th, thOut = sim.grains[0].th;
+      const dist = (a, b) => { let d = (a - b) % (Math.PI / 3); if (d < 0) d += Math.PI / 3; return Math.min(d, Math.PI / 3 - d); };
+      let n = 0;
+      for (let i = 0; i < N; i++) {
+        if (psiRe[i] * psiRe[i] + psiIm[i] * psiIm[i] < 0.5) continue;
+        const o = Math.atan2(psiIm[i], psiRe[i]) / 6;
+        if (dist(o, thIn) < dist(o, thOut)) n++;
+      }
+      sim.grainAtoms = n;
+    }
+  };
+  sim.analyze();
+  return sim;
+}
+if (typeof module !== "undefined") module.exports = { createSim, R0 };
+
+
+// ---------- page ----------
+const $ = id => document.getElementById(id);
+const opt = { mode: "circle", size: "M", grains: 6, mis: 20, radius: 0.6, T: 0.30, seed: 1 };
+let sim, running = true, speed = 25, colorBy = "cn", smoothOn = true, hist = [], lastSample = 0, tkin = 0.3;
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function newSim(keepSeed) {
+  if (!keepSeed) opt.seed = (Math.random() * 2 ** 32) >>> 0;
+  sim = createSim(opt);
+  sim.T = opt.T;
+  hist = []; lastSample = -1e9; tkin = opt.T;
+  sample();
+  draw();
+}
+function sample() {
+  const y = sim.mode === "circle" ? sim.grainAtoms * sim.Lx * sim.Ly / sim.N : sim.defects / sim.N * 100;
+  hist.push([sim.time, y]); lastSample = sim.time;
+}
+
+// colors come from the theme tokens, re-read when the theme changes
+let C = {};
+function readColors() {
+  const cs = getComputedStyle(document.documentElement), g = n => cs.getPropertyValue(n).trim();
+  C = { scene: g("--scene"), fg: g("--fg"), muted: g("--muted"), line: g("--line"), plot: g("--plot"), plain: g("--plain"),
+        cn: [g("--cn4"), g("--cn5"), g("--cn6"), g("--cn7"), g("--cn8")] };
+  const dark = cs.colorScheme === "dark" || matchMedia("(prefers-color-scheme: dark)").matches && document.documentElement.dataset.theme !== "light";
+  C.hue = Array.from({ length: 36 }, (_, k) => `hsl(${k * 10} 65% ${dark ? 60 : 52}%)`);
+}
+readColors();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readColors(); draw(); drawChart(); });
+new MutationObserver(() => { readColors(); draw(); drawChart(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+// ---------- drawing ----------
+const view = $("view"), vctx = view.getContext("2d");
+function fitCanvas(c) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2), w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  return { dpr, w, h };
+}
+function draw() {
+  if (!sim) return;
+  const { dpr, w, h } = fitCanvas(view);
+  const ctx = vctx;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = C.scene; ctx.fillRect(0, 0, w, h);
+  const pad = 14, s = Math.min((w - 2 * pad) / sim.Lx, (h - 2 * pad) / sim.Ly);
+  const ox = (w - s * sim.Lx) / 2, oy = (h - s * sim.Ly) / 2;
+  ctx.strokeStyle = C.line; ctx.lineWidth = 1; ctx.strokeRect(ox - 0.5, oy - 0.5, s * sim.Lx + 1, s * sim.Ly + 1);
+  const X = smoothOn ? sim.xs : sim.x, Y = smoothOn ? sim.ys : sim.y, r = 0.46 * R0 * s;
+  // group atoms by color and draw each group as one path
+  const groups = new Map();
+  const add = (col, i) => { let g = groups.get(col); if (!g) { g = []; groups.set(col, g); } g.push(i); };
+  for (let i = 0; i < sim.N; i++) {
+    let col;
+    if (colorBy === "cn") { const c = sim.cn[i]; col = C.cn[c <= 4 ? 0 : c >= 8 ? 4 : c - 4]; }
+    else if (colorBy === "ori") {
+      const m = sim.psiRe[i] * sim.psiRe[i] + sim.psiIm[i] * sim.psiIm[i];
+      if (m < 0.5 || sim.cn[i] !== 6) col = C.cn[2];
+      else { let o = Math.atan2(sim.psiIm[i], sim.psiRe[i]); if (o < 0) o += 2 * Math.PI; col = C.hue[Math.floor(o / (2 * Math.PI) * 36) % 36]; }
+    } else col = C.plain;
+    add(col, i);
+  }
+  // bulk atoms first so the boundary colors sit on top
+  const order = [...groups.keys()].sort((a, b) => (b === C.cn[2]) - (a === C.cn[2]));
+  ctx.save();
+  ctx.beginPath(); ctx.rect(ox, oy, s * sim.Lx, s * sim.Ly); ctx.clip();
+  for (const col of order) {
+    ctx.fillStyle = col; ctx.beginPath();
+    for (const i of groups.get(col)) {
+      const px = ox + X[i] * s, py = oy + (sim.Ly - Y[i]) * s;
+      ctx.moveTo(px + r, py); ctx.arc(px, py, r, 0, 2 * Math.PI);
+    }
+    ctx.fill();
+  }
+  ctx.restore();
+  readout();
+}
+function readout() {
+  const area = sim.Lx * sim.Ly / sim.N;
+  $("readout").innerHTML =
+    `t = ${sim.time.toFixed(1)} τ<br>` +
+    `N = ${sim.N.toLocaleString()} atoms<br>` +
+    `T set ${sim.T.toFixed(2)} · measured ${tkin.toFixed(2)}<br>` +
+    `E<sub>pot</sub> = ${sim.epot.toFixed(3)} ε/atom<br>` +
+    `boundary atoms (CN ≠ 6): ${sim.defects}` +
+    (sim.mode === "circle" ? `<br>embedded grain: ${(sim.grainAtoms * area).toFixed(0)} σ²` : "");
+}
+
+// ---------- history plot ----------
+const chart = $("chart"), cctx = chart.getContext("2d");
+function drawChart() {
+  if (!sim) return;
+  const { dpr, w, h } = fitCanvas(chart);
+  const ctx = cctx; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  const L = 44, R = 8, T = 8, B = 22, pw = w - L - R, ph = h - T - B;
+  const tlast = hist.length ? hist[hist.length - 1][0] : 0;
+  let ylast = 0; for (const [, y] of hist) ylast = Math.max(ylast, y);
+  const ys = niceStep((ylast || 1) / 4), ymax = Math.ceil((ylast || 1) / ys) * ys;
+  const xs = niceStep(Math.max(10, tlast) / 4), tx = Math.ceil(Math.max(10, tlast) / xs) * xs;
+  ctx.font = "11px " + (getComputedStyle(document.documentElement).getPropertyValue("--font-mono") || "monospace");
+  ctx.fillStyle = C.muted; ctx.strokeStyle = C.line; ctx.lineWidth = 1;
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (let yv = 0; yv <= ymax + 1e-9; yv += ys) {
+    const py = T + ph - ph * yv / ymax;
+    ctx.beginPath(); ctx.moveTo(L, Math.round(py) + 0.5); ctx.lineTo(L + pw, Math.round(py) + 0.5); ctx.stroke();
+    ctx.fillText(fmt(yv), L - 6, py);
+  }
+  ctx.textBaseline = "top";
+  for (let tv = 0; tv <= tx + 1e-9; tv += xs) {
+    const last = tv + xs > tx + 1e-9;
+    ctx.textAlign = last ? "right" : tv === 0 ? "left" : "center";
+    ctx.fillText(fmt(tv) + (last ? " τ" : ""), L + pw * tv / tx, T + ph + 5);
+  }
+  const ymaxPlot = ymax;
+  if (hist.length > 1) {
+    ctx.strokeStyle = C.plot; ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.beginPath();
+    hist.forEach(([t, y], k) => { const px = L + pw * t / tx, py = T + ph - ph * y / ymaxPlot; k ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+    ctx.stroke();
+    const [t, y] = hist[hist.length - 1];
+    ctx.fillStyle = C.plot; ctx.beginPath(); ctx.arc(L + pw * t / tx, T + ph - ph * y / ymaxPlot, 3.5, 0, 2 * Math.PI); ctx.fill();
+  }
+  // straight-line fit of the area while the grain is still large: curvature-driven growth gives dA/dt = −2πMγ, a constant
+  if (sim.mode === "circle") {
+    const A0 = hist.length ? hist[0][1] : 0, pts = hist.filter(([, y]) => y > 0.15 * A0);
+    if (pts.length >= 5 && pts[pts.length - 1][0] - pts[0][0] > 10) {
+      let st = 0, sy = 0, stt = 0, sty = 0; const n = pts.length;
+      for (const [t, y] of pts) { st += t; sy += y; stt += t * t; sty += t * y; }
+      const k = (n * sty - st * sy) / (n * stt - st * st);
+      $("fit").textContent = `dA/dt ≈ ${k.toFixed(1)} σ²/τ (line fit while A > 15% of A₀)`;
+    } else $("fit").textContent = "dA/dt: collecting data…";
+  } else $("fit").textContent = "Percent of atoms with CN ≠ 6. It falls as boundaries are removed.";
+}
+function niceStep(v) { const p = 10 ** Math.floor(Math.log10(v)), m = v / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p; }
+function fmt(v) { return Math.abs(v) < 1e-9 ? "0" : v >= 10 ? v.toFixed(0) : v >= 1 ? +v.toFixed(1) + "" : +v.toFixed(2) + ""; }
+
+// ---------- loop ----------
+function frame() {
+  if (running && sim) {
+    const n = reduceMotion ? Math.max(1, Math.round(speed / 2)) : speed;
+    sim.step(n);
+    sim.smooth(n * sim.dt, smoothOn ? 1 : 0);
+    sim.analyze();
+    tkin = 0.9 * tkin + 0.1 * sim.kineticT();
+    if (sim.time - lastSample >= 1) sample();
+    draw(); drawChart();
+  }
+  requestAnimationFrame(frame);
+}
+
+// ---------- controls ----------
+function showModeFields() {
+  const c = opt.mode === "circle";
+  $("misField").hidden = !c; $("radField").hidden = !c; $("grainField").hidden = c;
+  $("chartTitle").textContent = c ? "Embedded grain area (σ²)" : "Boundary atoms (% of all atoms)";
+}
+document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener("change", () => { opt.mode = r.value; showModeFields(); newSim(); drawChart(); }));
+document.querySelectorAll('input[name="size"]').forEach(r => r.addEventListener("change", () => { opt.size = r.value; newSim(); drawChart(); }));
+document.querySelectorAll('input[name="color"]').forEach(r => r.addEventListener("change", () => {
+  colorBy = r.value; $("keyCN").hidden = colorBy !== "cn"; $("keyOri").hidden = colorBy !== "ori"; draw();
+}));
+$("mis").addEventListener("input", e => { opt.mis = +e.target.value; $("misOut").textContent = `${opt.mis}°`; });
+$("mis").addEventListener("change", () => { newSim(); drawChart(); });
+$("radius").addEventListener("input", e => { opt.radius = +e.target.value; $("radiusOut").textContent = `${opt.radius.toFixed(2)} × half box`; });
+$("radius").addEventListener("change", () => { newSim(); drawChart(); });
+$("grains").addEventListener("input", e => { opt.grains = +e.target.value; $("grainsOut").textContent = opt.grains; });
+$("grains").addEventListener("change", () => { newSim(); drawChart(); });
+$("newSample").addEventListener("click", () => { newSim(); drawChart(); });
+$("restart").addEventListener("click", () => { newSim(true); drawChart(); });
+function setT(v) {
+  v = Math.min(0.8, Math.max(0.02, +v)); if (!isFinite(v)) return;
+  opt.T = v; if (sim) sim.T = v; $("T").value = v;
+  if (document.activeElement !== $("TNum")) $("TNum").value = v.toFixed(2);
+}
+$("T").addEventListener("input", e => { $("TNum").value = (+e.target.value).toFixed(2); setT(e.target.value); });
+$("TNum").addEventListener("change", e => setT(e.target.value));
+$("speed").addEventListener("input", e => { speed = +e.target.value; $("speedOut").textContent = speed; });
+$("smooth").addEventListener("change", e => { smoothOn = e.target.checked; if (!smoothOn) { sim.xs.set(sim.x); sim.ys.set(sim.y); } sim.analyze(); draw(); });
+$("run").addEventListener("click", () => { running = !running; $("run").textContent = running ? "Pause" : "Run"; });
+new ResizeObserver(() => { draw(); drawChart(); }).observe($("stage"));
+new ResizeObserver(() => drawChart()).observe(chart);
+
+showModeFields();
+newSim(true);
+drawChart();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
