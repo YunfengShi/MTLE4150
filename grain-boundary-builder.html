@@ -338,8 +338,9 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 
   // conventional cubic cell nearest the boundary that lies wholly inside one crystal.
   // Corners are lattice points c + {0,1}³ (crystal axes, units of a); toLab maps a crystal point to its lab position.
-  function findCell(toLab, inside) {
-    let best = null, bestD = Infinity;
+  // all such cells, nearest the origin first (the 60 nearest are kept)
+  function findCells(toLab, inside) {
+    const out = [];
     for (let i = -6; i <= 6; i++) for (let j = -6; j <= 6; j++) for (let k = -6; k <= 6; k++) {
       const corners = [];
       let ok = true;
@@ -348,11 +349,12 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
         if (!inside(q)) ok = false; else corners.push(q);
       }
       if (!ok) continue;
-      const c = toLab(i + 0.5, j + 0.5, k + 0.5), d = c.lengthSq();
-      if (d < bestD - 1e-9) { bestD = d; best = { o: corners[0], c }; }
+      const c = toLab(i + 0.5, j + 0.5, k + 0.5);
+      out.push({ o: corners[0], c, ijk: [i, j, k], d: c.lengthSq() });
     }
-    return best;
+    return out.sort((a, b) => a.d - b.d).slice(0, 60);
   }
+  let cellCache = { key: "" };
   function addCellEdges(o, E, mat) {
     const r = 0.022;
     for (let a = 0; a < 3; a++) {
@@ -430,16 +432,44 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
       const inSlab = q => Math.abs(q.x) <= state.L + 1e-6 && Math.abs(q.y) <= state.L + 1e-6 && q.z >= zlo - 1e-6 && q.z <= zhi - 1e-3;
       const E1 = [0, 1, 2].map(k => new THREE.Vector3(M[0].getComponent(k), M[1].getComponent(k), M[2].getComponent(k)));   // crystal axes in the lab
       const E2 = E1.map(e => e.clone().applyMatrix4(Rz));
-      const cell1 = findCell(pre, q => inSlab(q) && q.dot(n) <= EPS);
-      const cell2 = findCell(pre, q => inSlab(q) && q.clone().applyMatrix4(Rz).dot(n) > EPS);    // atoms on the plane belong to crystal 1
-      if (cell1) {
-        addCellEdges(cell1.o, E1, mats.redEdge);
-        c1 = k1s.filter(p => inCell(p, cell1.o, E1)); k1s = k1s.filter(p => !inCell(p, cell1.o, E1));
+      // pick the pair of cells that are most nearly mirror images across the boundary (then the pair nearest it).
+      // The mirror plane is the cutting plane moved by half of crystal 2's shift along the normal.
+      const ckey = setupKey();
+      if (cellCache.key !== ckey) {
+        const h = off2.dot(n) / 2;
+        const mirror = p => p.clone().addScaledVector(n, -2 * (p.dot(n) - h));
+        const A = findCells(pre, q => inSlab(q) && q.dot(n) <= EPS);
+        const B = findCells(pre, q => inSlab(q) && q.clone().applyMatrix4(Rz).dot(n) >= -EPS);
+        // a crystal-2 site on the plane is empty unless a crystal-1 atom sits there (a coincident site)
+        const onPlane = new Set(k1.filter(p => Math.abs(p.dot(n)) < EPS).map(p => `${p.x.toFixed(3)},${p.y.toFixed(3)},${p.z.toFixed(3)}`));
+        const missing = ijk => {
+          let m = 0;
+          for (const b of BASIS[state.lat]) for (let v = 0; v < 8; v++) {
+            const u = [b[0] + (v & 1), b[1] + ((v >> 1) & 1), b[2] + ((v >> 2) & 1)];
+            if (u.some(x => x > 1 + 1e-9)) continue;
+            const q = pre(ijk[0] + u[0], ijk[1] + u[1], ijk[2] + u[2]).applyMatrix4(Rz);
+            if (Math.abs(q.dot(n)) < EPS && !onPlane.has(`${q.x.toFixed(3)},${q.y.toFixed(3)},${q.z.toFixed(3)}`)) m++;
+          }
+          return m;
+        };
+        let best = null;
+        for (const b of B) {
+          const cb = b.c.clone().applyMatrix4(Rz).add(off2), pen = 4 * missing(b.ijk), db = cb.clone().addScaledVector(n, -h).lengthSq();
+          for (const a of A) {
+            const sc = cb.distanceToSquared(mirror(a.c)) + 0.1 * (a.d + db) + pen;
+            if (!best || sc < best.sc) best = { sc, a, b };
+          }
+        }
+        cellCache = { key: ckey, best };
       }
-      if (cell2) {
-        const o2 = cell2.o.clone().applyMatrix4(Rz).add(off2);
+      const pair = cellCache.best;
+      if (pair) {
+        const o1 = pair.a.o, o2 = pair.b.o.clone().applyMatrix4(Rz).add(off2);
+        addCellEdges(o1, E1, mats.redEdge);
         addCellEdges(o2, E2, mats.blueEdge);
-        c2 = k2s.filter(q => inCell(q, o2, E2)); k2s = k2s.filter(q => !inCell(q, o2, E2));
+        const inAny = p => inCell(p, o1, E1) || inCell(p, o2, E2);     // atoms of either cell are drawn solid
+        c1 = k1s.filter(inAny); k1s = k1s.filter(p => !inAny(p));
+        c2 = k2s.filter(inAny); k2s = k2s.filter(q => !inAny(q));
       }
     }
     root.add(cellGroup);
