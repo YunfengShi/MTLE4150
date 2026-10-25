@@ -174,6 +174,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
         <label><input type="radio" name="size" value="S"><span>≈ 1,800 atoms</span></label>
         <label><input type="radio" name="size" value="M" checked><span>≈ 4,200</span></label>
         <label><input type="radio" name="size" value="L"><span>≈ 8,000</span></label>
+        <label><input type="radio" name="size" value="XL"><span>≈ 16,000</span></label>
+        <label><input type="radio" name="size" value="XXL"><span>≈ 32,000</span></label>
       </fieldset>
       <button class="btn primary" id="newSample" type="button">New sample</button>
     </section>
@@ -227,7 +229,7 @@ const RC2 = RC * RC, RS2 = RS * RS;
 const SKIN = 0.3, RL = RC + SKIN, RL2 = RL * RL;   // Verlet neighbor list: rebuilt when any atom has moved SKIN/2
 const RCN = 1.45;                     // coordination cutoff, between first (1.12σ) and second (1.94σ) neighbors
 const RCN2 = RCN * RCN;
-const SIZES = { S: [40, 46], M: [60, 70], L: [84, 96] };   // [nx, ny]: box = nx·r0 by ny·(√3/2)r0, commensurate with the 0° lattice
+const SIZES = { S: [40, 46], M: [60, 70], L: [84, 96], XL: [120, 138], XXL: [168, 194] };   // [nx, ny]: box = nx·r0 by ny·(√3/2)r0, commensurate with the 0° lattice
 
 function mulberry32(a) {
   return function () {
@@ -509,13 +511,23 @@ const opt = { mode: "circle", size: "M", grains: 6, mis: 20, radius: 0.6, rodRad
 let sim, running = true, speed = 25, colorBy = "cn", smoothOn = true, hist = [], lastSample = 0, tkin = 0.3;
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+let building = false;
 function newSim(keepSeed) {
   if (!keepSeed) opt.seed = (Math.random() * 2 ** 32) >>> 0;
-  sim = createSim(opt);
-  sim.T = opt.T;
-  hist = []; lastSample = -1e9; tkin = opt.T;
-  sample();
-  draw();
+  const build = () => {
+    sim = createSim(opt);
+    sim.T = opt.T;
+    hist = []; lastSample = -1e9; tkin = opt.T;
+    sample();
+    building = false;
+    draw(); drawChart();
+  };
+  if (opt.size === "XL" || opt.size === "XXL") {
+    // large samples take about a second to build: say so first, then build
+    building = true;
+    $("readout").textContent = `Building ≈ ${opt.size === "XL" ? "16,000" : "32,000"} atoms…`;
+    setTimeout(build, 30);
+  } else build();
 }
 function sample() {
   // [t, plotted value, grain atoms, boundary atoms, T set]
@@ -641,10 +653,17 @@ function niceStep(v) { const p = 10 ** Math.floor(Math.log10(v)), m = v / p; ret
 function fmt(v) { return Math.abs(v) < 1e-9 ? "0" : v >= 10 ? v.toFixed(0) : v >= 1 ? +v.toFixed(1) + "" : +v.toFixed(2) + ""; }
 
 // ---------- loop ----------
+let shownSpeed = "";
 function frame() {
-  if (running && sim) {
-    const n = reduceMotion ? Math.max(1, Math.round(speed / 2)) : speed;
-    sim.step(n);
+  if (running && sim && !building) {
+    // run the requested steps, but stop after a time budget so large samples keep the page responsive;
+    // big samples get a longer budget, since redrawing them costs as much as several steps
+    const want = reduceMotion ? Math.max(1, Math.round(speed / 2)) : speed, t0 = performance.now();
+    const budget = sim.N > 10000 ? 70 : 35;
+    let n = 0;
+    while (n < want) { const k = Math.min(5, want - n); sim.step(k); n += k; if (performance.now() - t0 > budget) break; }
+    const label = n < want ? `${speed} (≈ ${n} at this size)` : `${speed}`;
+    if (label !== shownSpeed) { $("speedOut").textContent = shownSpeed = label; }
     sim.smooth(n * sim.dt, smoothOn ? 1 : 0);
     sim.analyze();
     tkin = 0.9 * tkin + 0.1 * sim.kineticT();
@@ -685,7 +704,7 @@ function setT(v) {
 }
 $("T").addEventListener("input", e => { $("TNum").value = (+e.target.value).toFixed(2); setT(e.target.value); });
 $("TNum").addEventListener("change", e => setT(e.target.value));
-$("speed").addEventListener("input", e => { speed = +e.target.value; $("speedOut").textContent = speed; });
+$("speed").addEventListener("input", e => { speed = +e.target.value; $("speedOut").textContent = shownSpeed = `${speed}`; });
 $("smooth").addEventListener("change", e => { smoothOn = e.target.checked; if (!smoothOn) { sim.xs.set(sim.x); sim.ys.set(sim.y); } sim.analyze(); draw(); });
 // ---------- data export ----------
 function csvText() {
