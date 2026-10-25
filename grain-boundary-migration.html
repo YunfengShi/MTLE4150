@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Grain Boundary Migration</title>
-<meta name="description" content="Molecular dynamics of grain boundary migration in a 2D Lennard-Jones crystal: a shrinking circular grain and a coarsening polycrystal at adjustable temperature. MTLE 4150, Professor Yunfeng Shi, RPI.">
+<meta name="description" content="Molecular dynamics of grain boundary migration in a 2D Lennard-Jones crystal: a shrinking circular grain or rod and a coarsening polycrystal at adjustable temperature. MTLE 4150, Professor Yunfeng Shi, RPI.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,600&display=swap">
@@ -146,6 +146,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
       <fieldset class="seg">
         <legend>Sample</legend>
         <label><input type="radio" name="mode" value="circle" checked><span>Circular grain</span></label>
+        <label><input type="radio" name="mode" value="rod"><span>Rod</span></label>
         <label><input type="radio" name="mode" value="poly"><span>Polycrystal</span></label>
       </fieldset>
       <div class="field" id="misField">
@@ -155,6 +156,14 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
       <div class="field" id="radField">
         <label for="radius">Grain radius <output id="radiusOut">0.60 × half box</output></label>
         <input type="range" id="radius" min="0.2" max="0.8" step="0.05" value="0.6">
+      </div>
+      <div class="field" id="rodRField" hidden>
+        <label for="rodR">End radius <output id="rodROut">0.30 × half box</output></label>
+        <input type="range" id="rodR" min="0.1" max="0.45" step="0.05" value="0.3">
+      </div>
+      <div class="field" id="rodLField" hidden>
+        <label for="rodL">Rod length <output id="rodLOut">0.85 × box width</output></label>
+        <input type="range" id="rodL" min="0.3" max="0.95" step="0.05" value="0.85">
       </div>
       <div class="field" id="grainField" hidden>
         <label for="grains">Number of grains <output id="grainsOut">6</output></label>
@@ -198,6 +207,11 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
       <h2><b>4</b><span id="chartTitle">Embedded grain area</span></h2>
       <canvas class="chart" id="chart" aria-label="History plot"></canvas>
       <div class="fit" id="fit"></div>
+      <div class="row">
+        <button class="btn small" id="downloadCsv" type="button">Download CSV</button>
+        <button class="btn small" id="copyCsv" type="button">Copy CSV</button>
+        <span class="note" id="csvNote" role="status"></span>
+      </div>
     </section>
   </div>
 </div>
@@ -246,16 +260,23 @@ function createSim(opt) {
     }
   }
   const grains = [];                  // {th} orientation of each grain, for analysis
-  if (opt.mode === "circle") {
-    const R = opt.radius * Math.min(Lx, Ly) / 2, cx = Lx / 2, cy = Ly / 2;
-    const th = opt.mis * Math.PI / 180;
+  if (opt.mode === "circle" || opt.mode === "rod") {
+    // embedded grain: a disk, or a rod along x with semicircular ends (a stadium: points within R of a segment)
+    const cx = Lx / 2, cy = Ly / 2, th = opt.mis * Math.PI / 180;
+    let R, s = 0;
+    if (opt.mode === "circle") R = opt.radius * Math.min(Lx, Ly) / 2;
+    else {
+      R = opt.rodRadius * Math.min(Lx, Ly) / 2;
+      s = Math.max(0, (opt.rodLength * Lx - 2 * R) / 2);      // half-length of the straight part
+    }
+    const dist = (dx, dy) => Math.hypot(Math.max(0, Math.abs(dx) - s), dy);
     grains.push({ th: 0 }, { th });
     // matrix: the 0° lattice tiles the periodic box exactly
     for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
       const x = wrap((i + 0.5 * (j % 2)) * R0 + 0.25 * R0, Lx), y = (j + 0.5) * R0 * Math.sqrt(3) / 2;
-      if (Math.hypot(mi(x - cx, Lx), mi(y - cy, Ly)) >= R) { px.push(x); py.push(y); grainOf.push(0); }
+      if (dist(mi(x - cx, Lx), mi(y - cy, Ly)) >= R) { px.push(x); py.push(y); grainOf.push(0); }
     }
-    fill(th, cx, cy, R + 1, (dx, dy) => Math.hypot(dx, dy) < R, 1);
+    fill(th, cx, cy, s + R + 1, (dx, dy) => dist(dx, dy) < R, 1);
   } else {
     // polycrystal: periodic Voronoi cells around random seeds, each filled with its own lattice
     const n = opt.grains, seeds = [];
@@ -464,7 +485,7 @@ function createSim(opt) {
     }
     sim.defects = defects;
     // embedded grain: atoms with good local order whose orientation is closer to the grain's than to the matrix's
-    if (sim.mode === "circle") {
+    if (sim.mode !== "poly") {
       const thIn = sim.grains[1].th, thOut = sim.grains[0].th;
       const dist = (a, b) => { let d = (a - b) % (Math.PI / 3); if (d < 0) d += Math.PI / 3; return Math.min(d, Math.PI / 3 - d); };
       let n = 0;
@@ -484,7 +505,7 @@ if (typeof module !== "undefined") module.exports = { createSim, R0 };
 
 // ---------- page ----------
 const $ = id => document.getElementById(id);
-const opt = { mode: "circle", size: "M", grains: 6, mis: 20, radius: 0.6, T: 0.30, seed: 1 };
+const opt = { mode: "circle", size: "M", grains: 6, mis: 20, radius: 0.6, rodRadius: 0.3, rodLength: 0.85, T: 0.30, seed: 1 };
 let sim, running = true, speed = 25, colorBy = "cn", smoothOn = true, hist = [], lastSample = 0, tkin = 0.3;
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -497,8 +518,9 @@ function newSim(keepSeed) {
   draw();
 }
 function sample() {
-  const y = sim.mode === "circle" ? sim.grainAtoms * sim.Lx * sim.Ly / sim.N : sim.defects / sim.N * 100;
-  hist.push([sim.time, y]); lastSample = sim.time;
+  // [t, plotted value, grain atoms, boundary atoms, T set]
+  const y = sim.mode !== "poly" ? sim.grainAtoms * sim.Lx * sim.Ly / sim.N : sim.defects / sim.N * 100;
+  hist.push([sim.time, y, sim.grainAtoms, sim.defects, sim.T]); lastSample = sim.time;
 }
 
 // colors come from the theme tokens, re-read when the theme changes
@@ -567,7 +589,7 @@ function readout() {
     `T set ${sim.T.toFixed(2)} · measured ${tkin.toFixed(2)}<br>` +
     `E<sub>pot</sub> = ${sim.epot.toFixed(3)} ε/atom<br>` +
     `boundary atoms (CN ≠ 6): ${sim.defects}` +
-    (sim.mode === "circle" ? `<br>embedded grain: ${(sim.grainAtoms * area).toFixed(0)} σ²` : "");
+    (sim.mode !== "poly" ? `<br>embedded grain: ${(sim.grainAtoms * area).toFixed(0)} σ²` : "");
 }
 
 // ---------- history plot ----------
@@ -604,13 +626,14 @@ function drawChart() {
     ctx.fillStyle = C.plot; ctx.beginPath(); ctx.arc(L + pw * t / tx, T + ph - ph * y / ymaxPlot, 3.5, 0, 2 * Math.PI); ctx.fill();
   }
   // straight-line fit of the area while the grain is still large: curvature-driven growth gives dA/dt = −2πMγ, a constant
-  if (sim.mode === "circle") {
+  if (sim.mode !== "poly") {
     const A0 = hist.length ? hist[0][1] : 0, pts = hist.filter(([, y]) => y > 0.15 * A0);
     if (pts.length >= 5 && pts[pts.length - 1][0] - pts[0][0] > 10) {
       let st = 0, sy = 0, stt = 0, sty = 0; const n = pts.length;
       for (const [t, y] of pts) { st += t; sy += y; stt += t * t; sty += t * y; }
       const k = (n * sty - st * sy) / (n * stt - st * st);
-      $("fit").textContent = `dA/dt ≈ ${k.toFixed(1)} σ²/τ (line fit while A > 15% of A₀)`;
+      $("fit").textContent = `dA/dt ≈ ${k.toFixed(1)} σ²/τ (line fit while A > 15% of A₀)` +
+        (sim.mode === "rod" ? ". A rod and a circle lose area at the same rate, −2πMγ: only the total turning of the boundary, 2π, matters." : "");
     } else $("fit").textContent = "dA/dt: collecting data…";
   } else $("fit").textContent = "Percent of atoms with CN ≠ 6. It falls as boundaries are removed.";
 }
@@ -633,9 +656,10 @@ function frame() {
 
 // ---------- controls ----------
 function showModeFields() {
-  const c = opt.mode === "circle";
-  $("misField").hidden = !c; $("radField").hidden = !c; $("grainField").hidden = c;
-  $("chartTitle").textContent = c ? "Embedded grain area (σ²)" : "Boundary atoms (% of all atoms)";
+  const m = opt.mode, g = m !== "poly";
+  $("misField").hidden = !g; $("radField").hidden = m !== "circle"; $("grainField").hidden = g;
+  $("rodRField").hidden = $("rodLField").hidden = m !== "rod";
+  $("chartTitle").textContent = g ? "Embedded grain area (σ²)" : "Boundary atoms (% of all atoms)";
 }
 document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener("change", () => { opt.mode = r.value; showModeFields(); newSim(); drawChart(); }));
 document.querySelectorAll('input[name="size"]').forEach(r => r.addEventListener("change", () => { opt.size = r.value; newSim(); drawChart(); }));
@@ -646,6 +670,10 @@ $("mis").addEventListener("input", e => { opt.mis = +e.target.value; $("misOut")
 $("mis").addEventListener("change", () => { newSim(); drawChart(); });
 $("radius").addEventListener("input", e => { opt.radius = +e.target.value; $("radiusOut").textContent = `${opt.radius.toFixed(2)} × half box`; });
 $("radius").addEventListener("change", () => { newSim(); drawChart(); });
+$("rodR").addEventListener("input", e => { opt.rodRadius = +e.target.value; $("rodROut").textContent = `${opt.rodRadius.toFixed(2)} × half box`; });
+$("rodR").addEventListener("change", () => { newSim(); drawChart(); });
+$("rodL").addEventListener("input", e => { opt.rodLength = +e.target.value; $("rodLOut").textContent = `${opt.rodLength.toFixed(2)} × box width`; });
+$("rodL").addEventListener("change", () => { newSim(); drawChart(); });
 $("grains").addEventListener("input", e => { opt.grains = +e.target.value; $("grainsOut").textContent = opt.grains; });
 $("grains").addEventListener("change", () => { newSim(); drawChart(); });
 $("newSample").addEventListener("click", () => { newSim(); drawChart(); });
@@ -659,6 +687,42 @@ $("T").addEventListener("input", e => { $("TNum").value = (+e.target.value).toFi
 $("TNum").addEventListener("change", e => setT(e.target.value));
 $("speed").addEventListener("input", e => { speed = +e.target.value; $("speedOut").textContent = speed; });
 $("smooth").addEventListener("change", e => { smoothOn = e.target.checked; if (!smoothOn) { sim.xs.set(sim.x); sim.ys.set(sim.y); } sim.analyze(); draw(); });
+// ---------- data export ----------
+function csvText() {
+  const g = sim.mode !== "poly", aPer = sim.Lx * sim.Ly / sim.N;
+  const desc = sim.mode === "circle" ? `circular grain, radius ${opt.radius} x half box, misorientation ${opt.mis} deg`
+    : sim.mode === "rod" ? `rod with semicircular ends, half-width ${opt.rodRadius} x half box, length ${opt.rodLength} x box width, misorientation ${opt.mis} deg`
+    : `polycrystal, ${opt.grains} grains`;
+  const lines = [
+    `# Grain boundary migration, 2D Lennard-Jones crystal, Langevin NVT (MTLE 4150)`,
+    `# sample: ${desc}; N = ${sim.N} atoms; box ${sim.Lx.toFixed(3)} x ${sim.Ly.toFixed(3)} sigma; seed ${opt.seed}`,
+    `# reduced LJ units: time in tau, area in sigma^2, T in epsilon/kB; area per atom ${aPer.toFixed(4)} sigma^2`,
+    g ? "time_tau,grain_area_sigma2,grain_atoms,boundary_atoms_CN_not_6,T_set" : "time_tau,boundary_atoms_percent,boundary_atoms_CN_not_6,T_set",
+  ];
+  for (const [t, y, ga, d, T] of hist)
+    lines.push(g ? `${t.toFixed(2)},${y.toFixed(2)},${ga},${d},${T.toFixed(3)}` : `${t.toFixed(2)},${y.toFixed(3)},${d},${T.toFixed(3)}`);
+  return lines.join("\n") + "\n";
+}
+function csvName() {
+  const tag = sim.mode === "poly" ? `poly${opt.grains}` : `${sim.mode}_mis${opt.mis}`;
+  return `gb-migration_${tag}_T${opt.T.toFixed(2)}.csv`;
+}
+const note = msg => { $("csvNote").textContent = msg; clearTimeout(note.t); note.t = setTimeout(() => { $("csvNote").textContent = ""; }, 4000); };
+$("downloadCsv").addEventListener("click", () => {
+  const url = URL.createObjectURL(new Blob([csvText()], { type: "text/csv" }));
+  const a = document.createElement("a"); a.href = url; a.download = csvName();
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  note(`${hist.length} rows saved as ${csvName()}`);
+});
+$("copyCsv").addEventListener("click", () => {
+  const text = csvText();
+  navigator.clipboard.writeText(text).then(() => note(`${hist.length} rows copied`), () => {
+    const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+    ta.remove(); note(ok ? `${hist.length} rows copied` : "Copy was blocked by the browser");
+  });
+});
 $("run").addEventListener("click", () => { running = !running; $("run").textContent = running ? "Pause" : "Run"; });
 new ResizeObserver(() => { draw(); drawChart(); }).observe($("stage"));
 new ResizeObserver(() => drawChart()).observe(chart);
