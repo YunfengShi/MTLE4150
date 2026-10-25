@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Grain Boundary Migration</title>
-<meta name="description" content="Molecular dynamics of grain boundary migration in a 2D Lennard-Jones crystal: a shrinking circular grain or rod and a coarsening polycrystal at adjustable temperature. MTLE 4150, Professor Yunfeng Shi, RPI.">
+<meta name="description" content="Molecular dynamics of grain boundary migration in a 2D Lennard-Jones crystal: a shrinking circular grain or rod and a coarsening polycrystal at adjustable temperature, with an optional second species at the boundaries. MTLE 4150, Professor Yunfeng Shi, RPI.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,600&display=swap">
@@ -23,6 +23,7 @@
   --cn7: #d63027;          /* seven neighbors */
   --cn4: #e39a12;          /* four or fewer */
   --cn8: #7b3fb5;          /* eight or more */
+  --solute: #1c2129;       /* second species */
   --plain: #7f8da0;
   --plot: #c4471c;
   --font-display: "Newsreader", Georgia, "Times New Roman", serif;
@@ -32,14 +33,14 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0f141b; --panel: #161d26; --fg: #e5eaf0; --muted: #96a2b2; --line: #29323e;
-    --accent: #ff7a4a; --scene: #121821; --cn6: #364253; --cn5: #5aa0ff; --cn7: #ff5c50; --cn4: #ffc23d; --cn8: #c08cff;
+    --accent: #ff7a4a; --scene: #121821; --cn6: #364253; --cn5: #5aa0ff; --cn7: #ff5c50; --cn4: #ffc23d; --cn8: #c08cff; --solute: #f2f4f7;
     --plain: #8a99ad; --plot: #ff7a4a;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0f141b; --panel: #161d26; --fg: #e5eaf0; --muted: #96a2b2; --line: #29323e;
-  --accent: #ff7a4a; --scene: #121821; --cn6: #364253; --cn5: #5aa0ff; --cn7: #ff5c50; --cn4: #ffc23d; --cn8: #c08cff;
+  --accent: #ff7a4a; --scene: #121821; --cn6: #364253; --cn5: #5aa0ff; --cn7: #ff5c50; --cn4: #ffc23d; --cn8: #c08cff; --solute: #f2f4f7;
   --plain: #8a99ad; --plot: #ff7a4a;
   color-scheme: dark;
 }
@@ -104,7 +105,10 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .btn.small { padding: 6px 10px; font-weight: 500; }
 .btn:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.chart { width: 100%; height: 150px; display: block; }
+.chart { width: 100%; height: 170px; display: block; }
+.step.wide { grid-column: 1 / -1; }
+.chartRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px); gap: 14px; align-items: start; }
+@media (max-width: 700px) { .chartRow { grid-template-columns: minmax(0, 1fr); } }
 .fit { font: 12.5px/1.5 var(--font-mono); font-variant-numeric: tabular-nums; }
 </style>
 </head>
@@ -126,12 +130,14 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
       <span><i style="background:var(--cn6);outline:1px solid var(--line)"></i>6 neighbors (bulk)</span>
       <span><i style="background:var(--cn7)"></i>7 neighbors</span>
       <span><i style="background:var(--cn8)"></i>≥ 8 neighbors</span>
+      <span class="solKey" hidden><i style="background:var(--solute)"></i>second species</span>
     </div>
     <div class="key" id="keyOri" hidden>
       <span>Lattice orientation</span>
       <span class="wheel"></span>
       <span class="ticks"><span>0°</span><span>30°</span><span>60°</span></span>
       <span><i style="background:var(--cn6);outline:1px solid var(--line)"></i>disordered</span>
+      <span class="solKey" hidden><i style="background:var(--solute)"></i>second species</span>
     </div>
     <div class="readout" id="readout"></div>
     <div class="runbar">
@@ -181,7 +187,30 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     </section>
 
     <section class="step">
-      <h2><b>2</b>Temperature (NVT)</h2>
+      <h2><b>2</b>Second species</h2>
+      <div class="field">
+        <label for="solFrac">Amount <output id="solFracOut">none</output></label>
+        <input type="range" id="solFrac" min="0" max="0.5" step="0.01" value="0">
+      </div>
+      <fieldset class="seg">
+        <legend>Placed</legend>
+        <label><input type="radio" name="solWhere" value="gb" checked><span>On the boundaries</span></label>
+        <label><input type="radio" name="solWhere" value="random"><span>At random</span></label>
+      </fieldset>
+      <div class="field">
+        <label for="solSize"><span>Size σ<sub>B</sub>/σ<sub>A</sub></span> <output id="solSizeOut">1.20</output></label>
+        <input type="range" id="solSize" min="0.8" max="1.4" step="0.05" value="1.2">
+      </div>
+      <div class="field">
+        <label for="solEps"><span>A–B bond ε<sub>AB</sub>/ε<sub>AA</sub></span> <output id="solEpsOut">1.0</output></label>
+        <input type="range" id="solEps" min="0.5" max="2" step="0.1" value="1">
+      </div>
+      <label class="check"><input type="checkbox" id="solFixed"> Hold them fixed (pinning particles)</label>
+      <p class="note">The amount is a fraction of the boundary sites in the starting sample; "At random" scatters the same number through the crystal. Changing these keeps the same grains, so runs compare directly.</p>
+    </section>
+
+    <section class="step">
+      <h2><b>3</b>Temperature (NVT)</h2>
       <div class="field">
         <label for="T"><span>Temperature k<sub>B</sub>T/ε</span> <input type="number" id="TNum" min="0.02" max="0.8" step="0.01" value="0.30" aria-label="Temperature value"></label>
         <input type="range" id="T" min="0.02" max="0.8" step="0.01" value="0.30">
@@ -194,7 +223,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     </section>
 
     <section class="step">
-      <h2><b>3</b>Color the atoms</h2>
+      <h2><b>4</b>Color the atoms</h2>
       <fieldset class="seg">
         <legend>Color by</legend>
         <label><input type="radio" name="color" value="cn" checked><span>Coordination</span></label>
@@ -205,14 +234,18 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
       <p class="note">Neighbors are atoms closer than 1.45σ, between the first (1.12σ) and second (1.94σ) neighbor shells.</p>
     </section>
 
-    <section class="step">
-      <h2><b>4</b><span id="chartTitle">Embedded grain area</span></h2>
-      <canvas class="chart" id="chart" aria-label="History plot"></canvas>
-      <div class="fit" id="fit"></div>
-      <div class="row">
-        <button class="btn small" id="downloadCsv" type="button">Download CSV</button>
-        <button class="btn small" id="copyCsv" type="button">Copy CSV</button>
-        <span class="note" id="csvNote" role="status"></span>
+    <section class="step wide">
+      <h2><b>5</b><span id="chartTitle">Embedded grain area</span></h2>
+      <div class="chartRow">
+        <canvas class="chart" id="chart" aria-label="History plot"></canvas>
+        <div style="display:grid;gap:10px">
+          <div class="fit" id="fit"></div>
+          <div class="row">
+            <button class="btn small" id="downloadCsv" type="button">Download CSV</button>
+            <button class="btn small" id="copyCsv" type="button">Copy CSV</button>
+          </div>
+          <span class="note" id="csvNote" role="status"></span>
+        </div>
       </div>
     </section>
   </div>
@@ -301,7 +334,14 @@ function createSim(opt) {
   }
 
   // remove overlaps at the boundaries: drop an atom closer than 0.8 r0 to one already kept
-  const ncx = Math.max(3, Math.floor(Lx / RL)), ncy = Math.max(3, Math.floor(Ly / RL));
+  // second species B: placed after the first relaxation (see the end); its size and the A–B bond set the pair table
+  const sol = opt.solute || { frac: 0 };
+  const useB = sol.frac > 0, sB = useB ? sol.size : 1;
+  const SIG = [1, (1 + sB) / 2, sB], EPSP = [1, useB ? sol.eps : 1, 1];      // index = type(i) + type(j): AA, AB, BB
+  const PS2 = SIG.map(v => v * v), PRC2 = SIG.map(v => (RC * v) ** 2), PRS2 = SIG.map(v => (RS * v) ** 2),
+        PRS = SIG.map(v => RS * v), PW = SIG.map(v => (RC - RS) * v), PCN2 = SIG.map(v => (RCN * v) ** 2);
+  const RLv = RC * Math.max(...SIG) + SKIN, RLv2 = RLv * RLv;
+  const ncx = Math.max(3, Math.floor(Lx / RLv)), ncy = Math.max(3, Math.floor(Ly / RLv));
   const cwx = Lx / ncx, cwy = Ly / ncy;
   {
     const grid = new Map(), keepIdx = [], dmin2 = (0.8 * R0) ** 2;
@@ -333,7 +373,8 @@ function createSim(opt) {
   const xs = Float64Array.from(px), ys = Float64Array.from(py);    // time-averaged positions, for display analysis
   const head = new Int32Array(ncx * ncy), next = new Int32Array(N);
   const cn = new Uint8Array(N), psiRe = new Float32Array(N), psiIm = new Float32Array(N);
-  const sim = { N, Lx, Ly, x, y, vx, vy, xs, ys, cn, psiRe, psiIm, grains, grainOf: Int16Array.from(grainOf),
+  const type = new Uint8Array(N), mob = new Uint8Array(N).fill(1);   // species (0 = A, 1 = B); 0 in mob = held fixed
+  const sim = { N, Lx, Ly, x, y, vx, vy, xs, ys, cn, psiRe, psiIm, type, nB: 0, sizeB: sB, grains, grainOf: Int16Array.from(grainOf),
                 T: opt.T, gamma: 1.0, dt: 0.01, time: 0, steps: 0, epot: 0, mode: opt.mode, mis: opt.mis };
 
   function buildCells(X, Y) {
@@ -361,7 +402,7 @@ function createSim(opt) {
             let dx = x[i] - x[j], dy = y[i] - y[j];
             if (dx > hx) dx -= Lx; else if (dx < -hx) dx += Lx;
             if (dy > hy) dy -= Ly; else if (dy < -hy) dy += Ly;
-            if (dx * dx + dy * dy >= RL2) continue;
+            if (dx * dx + dy * dy >= RLv2) continue;
             if (npair * 2 + 2 > pairs.length) { const p2 = new Int32Array(pairs.length * 2); p2.set(pairs); pairs = p2; }
             pairs[2 * npair] = i; pairs[2 * npair + 1] = j; npair++;
           }
@@ -384,20 +425,20 @@ function createSim(opt) {
     if (rebuild || needRebuild()) buildPairs();
     fx.fill(0); fy.fill(0);
     let ep = 0;
-    const hx = Lx / 2, hy = Ly / 2, w = RC - RS;
+    const hx = Lx / 2, hy = Ly / 2;
     for (let p = 0; p < npair; p++) {
-      const i = pairs[2 * p], j = pairs[2 * p + 1];
+      const i = pairs[2 * p], j = pairs[2 * p + 1], k = type[i] + type[j];
       let dx = x[i] - x[j], dy = y[i] - y[j];
       if (dx > hx) dx -= Lx; else if (dx < -hx) dx += Lx;
       if (dy > hy) dy -= Ly; else if (dy < -hy) dy += Ly;
       const r2 = dx * dx + dy * dy;
-      if (r2 >= RC2) continue;
-      const ir2 = 1 / r2, ir6 = ir2 * ir2 * ir2;
-      const u = 4 * ir6 * (ir6 - 1);
-      let f = 24 * ir6 * (2 * ir6 - 1) * ir2;              // −(dU/dr)/r
+      if (r2 >= PRC2[k]) continue;
+      const e = EPSP[k], ir2 = 1 / r2, sr2 = PS2[k] * ir2, ir6 = sr2 * sr2 * sr2;
+      const u = 4 * e * ir6 * (ir6 - 1);
+      let f = 24 * e * ir6 * (2 * ir6 - 1) * ir2;              // −(dU/dr)/r
       let uu = u;
-      if (r2 > RS2) {
-        const r = Math.sqrt(r2), t = (r - RS) / w;
+      if (r2 > PRS2[k]) {
+        const w = PW[k], r = Math.sqrt(r2), t = (r - PRS[k]) / w;
         const S = 1 - t * t * t * (10 - 15 * t + 6 * t * t);
         const dS = -30 * t * t * (1 - t) * (1 - t) / w;
         f = f * S - u * dS / r; uu = u * S;
@@ -409,16 +450,19 @@ function createSim(opt) {
   }
 
   // gentle start: remove leftover overlaps by damped steps with capped displacements
-  forces(true);
-  for (let it = 0; it < 200; it++) {
-    for (let i = 0; i < N; i++) {
-      let dx = fx[i] * 1e-3, dy = fy[i] * 1e-3;
-      const d = Math.hypot(dx, dy); if (d > 0.03) { dx *= 0.03 / d; dy *= 0.03 / d; }
-      x[i] = wrap(x[i] + dx, Lx); y[i] = wrap(y[i] + dy, Ly);
+  function relax(nit) {
+    forces(true);
+    for (let it = 0; it < nit; it++) {
+      for (let i = 0; i < N; i++) {
+        let dx = fx[i] * 1e-3, dy = fy[i] * 1e-3;
+        const d = Math.hypot(dx, dy); if (d > 0.03) { dx *= 0.03 / d; dy *= 0.03 / d; }
+        x[i] = wrap(x[i] + dx, Lx); y[i] = wrap(y[i] + dy, Ly);
+      }
+      forces();
     }
-    forces();
+    xs.set(x); ys.set(y);
   }
-  xs.set(x); ys.set(y);
+  relax(200);
   // Maxwell–Boltzmann velocities at T
   let spare = null;
   const gauss = () => {
@@ -433,6 +477,7 @@ function createSim(opt) {
     const dt = sim.dt, hdt = dt / 2, c1 = Math.exp(-sim.gamma * dt), c2u = Math.sqrt(12 * (1 - c1 * c1) * sim.T);   // uniform noise with unit variance after scaling: cheaper than Gaussian, same NVT limit
     for (let k = 0; k < n; k++) {
       for (let i = 0; i < N; i++) {
+        if (!mob[i]) continue;
         vx[i] += hdt * fx[i]; vy[i] += hdt * fy[i];
         x[i] += hdt * vx[i]; y[i] += hdt * vy[i];
         vx[i] = c1 * vx[i] + c2u * (Math.random() - 0.5); vy[i] = c1 * vy[i] + c2u * (Math.random() - 0.5);
@@ -441,13 +486,13 @@ function createSim(opt) {
         if (y[i] < 0) y[i] += Ly; else if (y[i] >= Ly) y[i] -= Ly;
       }
       forces();
-      for (let i = 0; i < N; i++) { vx[i] += hdt * fx[i]; vy[i] += hdt * fy[i]; }
+      for (let i = 0; i < N; i++) if (mob[i]) { vx[i] += hdt * fx[i]; vy[i] += hdt * fy[i]; }
       sim.time += dt; sim.steps++;
     }
   };
   sim.kineticT = function () {
-    let k = 0; for (let i = 0; i < N; i++) k += vx[i] * vx[i] + vy[i] * vy[i];
-    return k / (2 * N);                       // 2D: ⟨½mv²⟩ = kBT per atom
+    let k = 0, m = 0; for (let i = 0; i < N; i++) if (mob[i]) { k += vx[i] * vx[i] + vy[i] * vy[i]; m++; }
+    return k / (2 * Math.max(1, m));                       // 2D: ⟨½mv²⟩ = kBT per atom
   };
   // exponential running average of positions over time constant tau (in τ), for a steadier picture
   sim.smooth = function (elapsed, tau) {
@@ -472,7 +517,7 @@ function createSim(opt) {
             if (dx > hx) dx -= Lx; else if (dx < -hx) dx += Lx;
             if (dy > hy) dy -= Ly; else if (dy < -hy) dy += Ly;
             const r2 = dx * dx + dy * dy;
-            if (r2 >= RCN2) continue;
+            if (r2 >= PCN2[type[i] + type[j]]) continue;
             cn[i]++; cn[j]++;
             const a = 6 * Math.atan2(dy, dx), c = Math.cos(a), sn = Math.sin(a);   // 6θ is the same for i→j and j→i
             psiRe[i] += c; psiIm[i] += sn; psiRe[j] += c; psiIm[j] += sn;
@@ -483,7 +528,7 @@ function createSim(opt) {
     let defects = 0;
     for (let i = 0; i < N; i++) {
       if (cn[i]) { psiRe[i] /= cn[i]; psiIm[i] /= cn[i]; }
-      if (cn[i] !== 6) defects++;
+      if (cn[i] !== 6 && !type[i]) defects++;              // boundary atoms of the host crystal
     }
     sim.defects = defects;
     // embedded grain: atoms with good local order whose orientation is closer to the grain's than to the matrix's
@@ -492,13 +537,25 @@ function createSim(opt) {
       const dist = (a, b) => { let d = (a - b) % (Math.PI / 3); if (d < 0) d += Math.PI / 3; return Math.min(d, Math.PI / 3 - d); };
       let n = 0;
       for (let i = 0; i < N; i++) {
-        if (psiRe[i] * psiRe[i] + psiIm[i] * psiIm[i] < 0.5) continue;
+        if (type[i] || psiRe[i] * psiRe[i] + psiIm[i] * psiIm[i] < 0.5) continue;
         const o = Math.atan2(psiIm[i], psiRe[i]) / 6;
         if (dist(o, thIn) < dist(o, thOut)) n++;
       }
       sim.grainAtoms = n;
     }
   };
+  // place the second species: a fraction of the boundary sites (CN ≠ 6 after relaxation), or the same number at random sites
+  if (useB) {
+    sim.analyze();
+    const gb = []; for (let i = 0; i < N; i++) if (cn[i] !== 6) gb.push(i);
+    const nB = Math.round(sol.frac * gb.length);
+    const pool = sol.where === "random" ? Array.from({ length: N }, (_, i) => i) : gb;
+    for (let k = pool.length - 1; k > 0; k--) { const m = Math.floor(rnd() * (k + 1)); [pool[k], pool[m]] = [pool[m], pool[k]]; }
+    for (let k = 0; k < nB; k++) type[pool[k]] = 1;
+    sim.nB = nB;
+    relax(150);                                   // let the lattice take up the new atoms' size
+    if (sol.fixed) for (let i = 0; i < N; i++) if (type[i]) { mob[i] = 0; vx[i] = vy[i] = 0; }
+  }
   sim.analyze();
   return sim;
 }
@@ -507,7 +564,8 @@ if (typeof module !== "undefined") module.exports = { createSim, R0 };
 
 // ---------- page ----------
 const $ = id => document.getElementById(id);
-const opt = { mode: "circle", size: "M", grains: 6, mis: 20, radius: 0.6, rodRadius: 0.3, rodLength: 0.85, T: 0.30, seed: 1 };
+const opt = { mode: "circle", size: "M", grains: 6, mis: 20, radius: 0.6, rodRadius: 0.3, rodLength: 0.85, T: 0.30, seed: 1,
+              solute: { frac: 0, where: "gb", size: 1.2, eps: 1.0, fixed: false } };
 let sim, running = true, speed = 25, colorBy = "cn", smoothOn = true, hist = [], lastSample = 0, tkin = 0.3;
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -520,6 +578,7 @@ function newSim(keepSeed) {
     hist = []; lastSample = -1e9; tkin = opt.T;
     sample();
     building = false;
+    document.querySelectorAll(".solKey").forEach(k => { k.hidden = !sim.nB; });
     draw(); drawChart();
   };
   if (opt.size === "XL" || opt.size === "XXL") {
@@ -539,7 +598,7 @@ function sample() {
 let C = {};
 function readColors() {
   const cs = getComputedStyle(document.documentElement), g = n => cs.getPropertyValue(n).trim();
-  C = { scene: g("--scene"), fg: g("--fg"), muted: g("--muted"), line: g("--line"), plot: g("--plot"), plain: g("--plain"),
+  C = { scene: g("--scene"), fg: g("--fg"), muted: g("--muted"), line: g("--line"), plot: g("--plot"), plain: g("--plain"), solute: g("--solute"),
         cn: [g("--cn4"), g("--cn5"), g("--cn6"), g("--cn7"), g("--cn8")] };
   const dark = cs.colorScheme === "dark" || matchMedia("(prefers-color-scheme: dark)").matches && document.documentElement.dataset.theme !== "light";
   C.hue = Array.from({ length: 36 }, (_, k) => `hsl(${k * 10} 65% ${dark ? 60 : 52}%)`);
@@ -568,7 +627,9 @@ function draw() {
   // group atoms by color and draw each group as one path
   const groups = new Map();
   const add = (col, i) => { let g = groups.get(col); if (!g) { g = []; groups.set(col, g); } g.push(i); };
+  const solute = [];
   for (let i = 0; i < sim.N; i++) {
+    if (sim.type[i]) { solute.push(i); continue; }
     let col;
     if (colorBy === "cn") { const c = sim.cn[i]; col = C.cn[c <= 4 ? 0 : c >= 8 ? 4 : c - 4]; }
     else if (colorBy === "ori") {
@@ -590,6 +651,13 @@ function draw() {
     }
     ctx.fill();
   }
+  // second species last, at its own size
+  if (solute.length) {
+    const rb = r * sim.sizeB;
+    ctx.fillStyle = C.solute; ctx.beginPath();
+    for (const i of solute) { const px = ox + X[i] * s, py = oy + (sim.Ly - Y[i]) * s; ctx.moveTo(px + rb, py); ctx.arc(px, py, rb, 0, 2 * Math.PI); }
+    ctx.fill();
+  }
   ctx.restore();
   readout();
 }
@@ -601,6 +669,7 @@ function readout() {
     `T set ${sim.T.toFixed(2)} · measured ${tkin.toFixed(2)}<br>` +
     `E<sub>pot</sub> = ${sim.epot.toFixed(3)} ε/atom<br>` +
     `boundary atoms (CN ≠ 6): ${sim.defects}` +
+    (sim.nB ? `<br>second species: ${sim.nB} atoms${opt.solute.fixed ? " (fixed)" : ""}` : "") +
     (sim.mode !== "poly" ? `<br>embedded grain: ${(sim.grainAtoms * area).toFixed(0)} σ²` : "");
 }
 
@@ -693,6 +762,16 @@ $("rodR").addEventListener("input", e => { opt.rodRadius = +e.target.value; $("r
 $("rodR").addEventListener("change", () => { newSim(); drawChart(); });
 $("rodL").addEventListener("input", e => { opt.rodLength = +e.target.value; $("rodLOut").textContent = `${opt.rodLength.toFixed(2)} × box width`; });
 $("rodL").addEventListener("change", () => { newSim(); drawChart(); });
+// second species: rebuild with the same seed, so the grains are the same and runs compare directly
+const solRebuild = () => { newSim(true); drawChart(); };
+$("solFrac").addEventListener("input", e => { opt.solute.frac = +e.target.value; $("solFracOut").textContent = opt.solute.frac ? `${Math.round(opt.solute.frac * 100)}% of boundary sites` : "none"; });
+$("solFrac").addEventListener("change", solRebuild);
+$("solSize").addEventListener("input", e => { opt.solute.size = +e.target.value; $("solSizeOut").textContent = opt.solute.size.toFixed(2); });
+$("solSize").addEventListener("change", () => { if (opt.solute.frac) solRebuild(); });
+$("solEps").addEventListener("input", e => { opt.solute.eps = +e.target.value; $("solEpsOut").textContent = opt.solute.eps.toFixed(1); });
+$("solEps").addEventListener("change", () => { if (opt.solute.frac) solRebuild(); });
+document.querySelectorAll('input[name="solWhere"]').forEach(r => r.addEventListener("change", () => { opt.solute.where = r.value; if (opt.solute.frac) solRebuild(); }));
+$("solFixed").addEventListener("change", e => { opt.solute.fixed = e.target.checked; if (opt.solute.frac) solRebuild(); });
 $("grains").addEventListener("input", e => { opt.grains = +e.target.value; $("grainsOut").textContent = opt.grains; });
 $("grains").addEventListener("change", () => { newSim(); drawChart(); });
 $("newSample").addEventListener("click", () => { newSim(); drawChart(); });
@@ -716,6 +795,8 @@ function csvText() {
     `# Grain boundary migration, 2D Lennard-Jones crystal, Langevin NVT (MTLE 4150)`,
     `# sample: ${desc}; N = ${sim.N} atoms; box ${sim.Lx.toFixed(3)} x ${sim.Ly.toFixed(3)} sigma; seed ${opt.seed}`,
     `# reduced LJ units: time in tau, area in sigma^2, T in epsilon/kB; area per atom ${aPer.toFixed(4)} sigma^2`,
+    sim.nB ? `# second species: ${sim.nB} atoms placed ${opt.solute.where === "gb" ? "on the boundaries" : "at random"} (${Math.round(opt.solute.frac * 100)}% of starting boundary sites), sigma_B/sigma_A = ${opt.solute.size}, eps_AB/eps_AA = ${opt.solute.eps}, ${opt.solute.fixed ? "held fixed" : "mobile"}`
+           : `# second species: none`,
     g ? "time_tau,grain_area_sigma2,grain_atoms,boundary_atoms_CN_not_6,T_set" : "time_tau,boundary_atoms_percent,boundary_atoms_CN_not_6,T_set",
   ];
   for (const [t, y, ga, d, T] of hist)
