@@ -708,12 +708,20 @@ function csvName() {
   return `gb-migration_${tag}_T${opt.T.toFixed(2)}.csv`;
 }
 const note = msg => { $("csvNote").textContent = msg; clearTimeout(note.t); note.t = setTimeout(() => { $("csvNote").textContent = ""; }, 4000); };
-$("downloadCsv").addEventListener("click", () => {
-  const url = URL.createObjectURL(new Blob([csvText()], { type: "text/csv" }));
-  const a = document.createElement("a"); a.href = url; a.download = csvName();
+$("downloadCsv").addEventListener("click", async () => {
+  const text = csvText(), name = csvName(), rows = hist.length;
+  // inside the Claude artifact viewer the file goes through its save prompt; on a normal web page, a plain download
+  const host = window.claude && window.claude.use ? await window.claude.use("downloads").catch(() => null) : null;
+  if (host) {
+    try { await host.save({ filename: name, data: text }); note(`${rows} rows saved as ${name}`); }
+    catch (e) { note(e && e.code === "declined" ? "Download cancelled" : e && e.code === "rate_limited" ? "A save prompt is already open" : "Download is not available here. Use Copy CSV."); }
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
+  const a = document.createElement("a"); a.href = url; a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
-  note(`${hist.length} rows saved as ${csvName()}`);
+  note(`${rows} rows saved as ${name}`);
 });
 $("copyCsv").addEventListener("click", () => {
   const text = csvText();
