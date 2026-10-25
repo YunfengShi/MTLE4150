@@ -212,14 +212,14 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
     <section class="step">
       <h2><b>3</b>Temperature (NVT)</h2>
       <div class="field">
-        <label for="T"><span>Temperature (K)</span> <input type="number" id="TNum" min="20" max="800" step="10" value="300" aria-label="Temperature in kelvin"></label>
-        <input type="range" id="T" min="20" max="800" step="10" value="300">
+        <label for="T"><span>Temperature (K)</span> <input type="number" id="TNum" min="20" max="2000" step="10" value="300" aria-label="Temperature in kelvin"></label>
+        <input type="range" id="T" min="20" max="2000" step="10" value="300">
       </div>
       <div class="field">
         <label for="speed">MD steps per frame <output id="speedOut">25</output></label>
         <input type="range" id="speed" min="1" max="80" step="1" value="25">
       </div>
-      <p class="note">Langevin thermostat, friction 1 ps⁻¹, time step 10 fs. The box keeps its 0 K size, so the crystal stays solid well above 800 K.</p>
+      <p class="note">Langevin thermostat, friction 1 ps⁻¹, time step 10 fs. The box keeps its 0 K size. The crystal starts to melt near 1100–1200 K and is liquid by about 1500 K; above that the grain area no longer means anything.</p>
     </section>
 
     <section class="step">
@@ -782,7 +782,7 @@ $("grains").addEventListener("change", () => { newSim(); drawChart(); });
 $("newSample").addEventListener("click", () => { newSim(); drawChart(); });
 $("restart").addEventListener("click", () => { newSim(true); drawChart(); });
 function setT(kelvin) {                       // the controls are in kelvin; the simulation runs in kBT/ε
-  let K = Math.min(800, Math.max(20, +kelvin)); if (!isFinite(K)) return;
+  let K = Math.min(2000, Math.max(20, +kelvin)); if (!isFinite(K)) return;
   opt.T = K / KELVIN; if (sim) sim.T = opt.T; $("T").value = K;
   if (document.activeElement !== $("TNum")) $("TNum").value = K.toFixed(0);
 }
