@@ -92,13 +92,16 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .planes { font: 12.5px/1.6 var(--font-mono); }
 .check:has(input:disabled) { color: var(--muted); cursor: default; }
 .fallback { padding: 24px; color: var(--muted); }
+.crumbs{display:flex;flex-wrap:wrap;gap:4px 18px}
+.crumbs a{color:inherit;text-decoration:none}
+.crumbs a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
 
 <div class="wrap">
   <header style="display:grid;gap:4px">
-    <div class="code">MTLE 4150</div>
+    <nav class="code crumbs" aria-label="Course and group"><a href="./">← MTLE 4150</a><a href="https://yunfengshi.github.io/ShiGroup/">Shi Group</a></nav>
     <h1>Grain Boundary Builder</h1>
   </header>
   <p class="lede">Make a boundary the way it is defined: take two identical crystals, rotate the second about a common axis, cut both along a plane, and join the halves. In a tilt boundary the plane contains the axis; in a twist boundary the plane is perpendicular to it.</p>

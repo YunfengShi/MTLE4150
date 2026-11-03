@@ -79,13 +79,16 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
 .btn.primary { background: var(--fg); color: var(--panel); border-color: var(--fg); }
 .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.crumbs{display:flex;flex-wrap:wrap;gap:4px 18px}
+.crumbs a{color:inherit;text-decoration:none}
+.crumbs a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
 
 <div class="wrap">
   <header style="display:grid;gap:4px">
-    <div class="code">MTLE 4150</div>
+    <nav class="code crumbs" aria-label="Course and group"><a href="./">← MTLE 4150</a><a href="https://yunfengshi.github.io/ShiGroup/">Shi Group</a></nav>
     <h1>Surface Energy for Simple Single-component Metals</h1>
     <p class="sub" id="title">Cleaving an FCC crystal along (110)</p>
   </header>

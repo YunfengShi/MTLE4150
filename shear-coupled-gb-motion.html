@@ -110,6 +110,9 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .chartRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px); gap: 14px; align-items: start; }
 @media (max-width: 700px) { .chartRow { grid-template-columns: minmax(0, 1fr); } }
 .fit { font: 12.5px/1.5 var(--font-mono); font-variant-numeric: tabular-nums; }
+.crumbs{display:flex;flex-wrap:wrap;gap:4px 18px}
+.crumbs a{color:inherit;text-decoration:none}
+.crumbs a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -127,7 +130,7 @@ select { font: 13px var(--font-body); padding: 5px 6px; border: 1px solid var(--
 
 <div class="wrap">
   <header style="display:grid;gap:4px">
-    <div class="code">MTLE 4150</div>
+    <nav class="code crumbs" aria-label="Course and group"><a href="./">← MTLE 4150</a><a href="https://yunfengshi.github.io/ShiGroup/">Shi Group</a></nav>
     <h1>Shear-Coupled Grain Boundary Motion</h1>
   </header>
   <p class="lede">A two-dimensional Lennard-Jones crystal with a symmetric tilt grain boundary running down the middle, periodic along the boundary. The thin slabs at the two ends are driven in opposite directions, the left one up and the right one down, so the bicrystal is sheared parallel to the boundary. Instead of the grains simply sliding past each other, the boundary moves sideways: it is coupled to the shear. Quantities are in SI units, converted from Lennard-Jones units with σ = 0.3 nm, ε/k<sub>B</sub> = 1000 K and τ = 1 ps.</p>

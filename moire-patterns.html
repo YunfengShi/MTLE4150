@@ -28,10 +28,14 @@ canvas{background:var(--stage);border:1px solid var(--line);border-radius:10px;m
 canvas{cursor:grab;touch-action:none} canvas.drag{cursor:grabbing}
 .hint{font-size:12.5px;color:var(--muted)}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.crumbs{display:flex;flex-wrap:wrap;gap:4px 14px;padding-right:18px;border-right:1px solid var(--line);font:600 13px/1.3 ui-monospace,Menlo,Consolas,monospace;letter-spacing:.04em}
+.crumbs a{color:var(--accent);text-decoration:none}
+.crumbs a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
 <header>
+  <nav class="crumbs" aria-label="Course and group"><a href="./">← MTLE 4150</a><a href="https://yunfengshi.github.io/ShiGroup/">Shi Group</a></nav>
   <div class="tabs">
     <button id="tG" type="button" aria-pressed="true">Bilayer graphene</button>
     <button id="tQ" type="button" aria-pressed="false">Quasicrystal (Penrose)</button>

@@ -90,13 +90,16 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   background: color-mix(in srgb, var(--scene) 82%, transparent); padding: 8px 10px; border-radius: 8px; }
 .wkey span { display: flex; align-items: center; gap: 7px; }
 .wkey i { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+.crumbs{display:flex;flex-wrap:wrap;gap:4px 18px}
+.crumbs a{color:inherit;text-decoration:none}
+.crumbs a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
 
 <div class="wrap">
   <header style="display:grid;gap:4px">
-    <div class="code">MTLE 4150</div>
+    <nav class="code crumbs" aria-label="Course and group"><a href="./">← MTLE 4150</a><a href="https://yunfengshi.github.io/ShiGroup/">Shi Group</a></nav>
     <h1>Surface Energy γ-Plot and Wulff Shape</h1>
   </header>
   <p class="lede">Nearest-neighbor broken-bond model. The distance from the centre to the surface in direction n is γ(n):

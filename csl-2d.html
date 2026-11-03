@@ -71,13 +71,16 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .check { display: flex; align-items: center; gap: 9px; font-size: 13.5px; cursor: pointer; }
 .check input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
 input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.crumbs{display:flex;flex-wrap:wrap;gap:4px 18px}
+.crumbs a{color:inherit;text-decoration:none}
+.crumbs a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
 
 <div class="wrap">
   <header style="display:grid;gap:4px">
-    <div class="code">MTLE 4150</div>
+    <nav class="code crumbs" aria-label="Course and group"><a href="./">← MTLE 4150</a><a href="https://yunfengshi.github.io/ShiGroup/">Shi Group</a></nav>
     <h1>2D Coincident Site Lattice</h1>
   </header>
   <p class="lede">Two identical rectangular lattices with lattice constants a and b. The red lattice is fixed. The blue lattice rotates about the shared origin atom at the centre. Where a blue site lands on a red site, the two lattices coincide.</p>

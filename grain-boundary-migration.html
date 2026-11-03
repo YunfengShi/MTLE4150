@@ -110,6 +110,9 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .chartRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px); gap: 14px; align-items: start; }
 @media (max-width: 700px) { .chartRow { grid-template-columns: minmax(0, 1fr); } }
 .fit { font: 12.5px/1.5 var(--font-mono); font-variant-numeric: tabular-nums; }
+.crumbs{display:flex;flex-wrap:wrap;gap:4px 18px}
+.crumbs a{color:inherit;text-decoration:none}
+.crumbs a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -117,7 +120,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 
 <div class="wrap">
   <header style="display:grid;gap:4px">
-    <div class="code">MTLE 4150</div>
+    <nav class="code crumbs" aria-label="Course and group"><a href="./">← MTLE 4150</a><a href="https://yunfengshi.github.io/ShiGroup/">Shi Group</a></nav>
     <h1>Grain Boundary Migration</h1>
   </header>
   <p class="lede">A two-dimensional crystal of atoms bonded by a short-ranged Lennard-Jones potential, run by molecular dynamics at constant temperature. Boundaries move toward their center of curvature, which removes boundary length: an embedded grain shrinks and disappears, and a polycrystal coarsens. Atoms with six neighbors are bulk crystal; five- and seven-fold atoms mark the boundaries. Quantities are in SI units, converted from Lennard-Jones units with σ = 0.3 nm, ε/k<sub>B</sub> = 1000 K (ε = 0.0862 eV) and τ = 1 ps, which makes the atomic mass about 92 u.</p>
