@@ -61,11 +61,15 @@ h2{margin:36px 0 16px;font:600 13px var(--body);letter-spacing:.12em;text-transf
 
 footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--rule);color:var(--muted);font-size:13.5px}
 @media (prefers-reduced-motion: reduce){.card{transition:none}.card:hover{transform:none}}
+.crumbs{display:flex;flex-wrap:wrap;gap:4px 18px;font:500 14px var(--mono);letter-spacing:.04em}
+.crumbs a{color:var(--link);text-decoration:none}
+.crumbs a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
+    <nav class="crumbs" aria-label="Shi Group site"><a href="https://yunfengshi.github.io/ShiGroup/teaching.html">← Teaching</a><a href="https://yunfengshi.github.io/ShiGroup/">Shi Group</a></nav>
     <div class="code">Materials Science and Engineering</div>
     <h1>MTLE 4150</h1>
     <p class="byline">Professor <strong>Yunfeng Shi</strong> · Rensselaer Polytechnic Institute</p>
