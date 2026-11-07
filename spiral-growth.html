@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spiral Growth on a Dislocation</title>
+<meta name="description" content="Kinetic Monte Carlo model of a close-packed crystal facet growing around one or two dislocations: the step winds into a growth spiral. Adjustable supersaturation, temperature and surface diffusion, with top and 3D views. MTLE 4150, Professor Yunfeng Shi, RPI.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,600&display=swap">
+<style>
+/* Layout: the simulation box fills the bench; the controls follow the order of an experiment (sample, temperature, how to look, what to measure) */
+:root {
+  --bg: #eef1f4;
+  --panel: #fbfcfd;
+  --fg: #18212c;
+  --muted: #5a6574;
+  --line: #d5dbe3;
+  --accent: #c4471c;
+  --scene: #ffffff;
+  --cn6: #c8d0db;          /* bulk: six neighbors */
+  --cn5: #2166c4;          /* five neighbors */
+  --cn7: #d63027;          /* seven neighbors */
+  --cn4: #e39a12;          /* four or fewer */
+  --cn8: #7b3fb5;          /* eight or more */
+  --solute: #1c2129;       /* second species */
+  --plain: #7f8da0;
+  --plot: #c4471c;
+  --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f141b; --panel: #161d26; --fg: #e5eaf0; --muted: #96a2b2; --line: #29323e;
+    --accent: #ff7a4a; --scene: #121821; --cn6: #364253; --cn5: #5aa0ff; --cn7: #ff5c50; --cn4: #ffc23d; --cn8: #c08cff; --solute: #f2f4f7;
+    --plain: #8a99ad; --plot: #ff7a4a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f141b; --panel: #161d26; --fg: #e5eaf0; --muted: #96a2b2; --line: #29323e;
+  --accent: #ff7a4a; --scene: #121821; --cn6: #364253; --cn5: #5aa0ff; --cn7: #ff5c50; --cn4: #ffc23d; --cn8: #c08cff; --solute: #f2f4f7;
+  --plain: #8a99ad; --plot: #ff7a4a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+.code { font: 500 13px var(--font-mono); letter-spacing: .08em; color: var(--accent); }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 28px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 14px; }
+h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(26px, 3.4vw, 34px); line-height: 1.1; margin: 0; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); max-width: 80ch; }
+.stage { position: relative; background: var(--scene); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  height: min(66vh, 640px); min-height: 340px; }
+.stage canvas { display: block; width: 100%; height: 100%; }
+.key { position: absolute; left: 12px; top: 12px; display: grid; gap: 4px; font-size: 13px;
+  background: color-mix(in srgb, var(--scene) 85%, transparent); padding: 8px 10px; border-radius: 8px; }
+.key span { display: flex; align-items: center; gap: 8px; }
+.key i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; }
+.key .wheel { width: 120px; height: 10px; border-radius: 5px;
+  background: linear-gradient(90deg, hsl(0 65% 55%), hsl(60 65% 55%), hsl(120 65% 55%), hsl(180 65% 55%), hsl(240 65% 55%), hsl(300 65% 55%), hsl(360 65% 55%)); }
+.key .ticks { display: flex; justify-content: space-between; width: 120px; font: 11px var(--font-mono); color: var(--muted); }
+.readout { position: absolute; right: 12px; top: 12px; font: 12.5px/1.55 var(--font-mono); text-align: right;
+  background: color-mix(in srgb, var(--scene) 85%, transparent); padding: 8px 10px; border-radius: 8px; font-variant-numeric: tabular-nums; }
+.runbar { position: absolute; left: 12px; bottom: 12px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 980px) { .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) {
+  .steps { grid-template-columns: minmax(0, 1fr); }
+  /* phone: legend and readout stack above the box instead of covering it */
+  .stage { height: auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; padding: 10px; }
+  .stage canvas { grid-column: 1 / -1; grid-row: 2; aspect-ratio: 1; height: auto; }
+  .key, .readout, .runbar { position: static; padding: 0; background: none; }
+  .key { font-size: 12px; }
+  .readout { font-size: 11px; }
+  .runbar { grid-column: 1 / -1; grid-row: 3; }
+}
+.step { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.step h2 { margin: 0; font: 600 13.5px/1.2 var(--font-body); display: flex; gap: 8px; align-items: center; }
+.step h2 b { font: 600 12px/1 var(--font-mono); width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center;
+  background: var(--fg); color: var(--panel); flex: none; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; border: 0; margin: 0; padding: 0; min-width: 0; }
+.seg legend { font-size: 12.5px; color: var(--muted); padding: 0; margin-bottom: 4px; width: 100%; }
+.seg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.seg span { display: inline-block; font: 500 13px/1 var(--font-body); padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; background: var(--panel); }
+.seg input:checked + span { background: var(--fg); color: var(--panel); border-color: var(--fg); }
+.seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field label { font-size: 13px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.field input[type="number"] { width: 5.4em; font: 13px var(--font-mono); padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--scene); color: var(--fg); text-align: right; }
+.field output, .note { font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.note { margin: 0; line-height: 1.5; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.check input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; flex: none; }
+.btn { font: 600 13px/1 var(--font-body); padding: 9px 13px; border-radius: 8px; cursor: pointer; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
+.btn.primary { background: var(--fg); color: var(--panel); border-color: var(--fg); }
+.btn.small { padding: 6px 10px; font-weight: 500; }
+.btn:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.chart { width: 100%; height: 170px; display: block; }
+.step.wide { grid-column: 1 / -1; }
+.chartRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px); gap: 14px; align-items: start; }
+@media (max-width: 700px) { .chartRow { grid-template-columns: minmax(0, 1fr); } }
+.fit { font: 12.5px/1.5 var(--font-mono); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+
+
+<style>
+.stage { height: min(70vh, 680px); }
+.stage canvas { image-rendering: pixelated; touch-action: none; }
+.stage.is3d { cursor: grab; }
+.stage.is3d:active { cursor: grabbing; }
+.key .bar { width: 132px; height: 10px; border-radius: 5px; }
+.key .ticks { width: 132px; }
+.step p.note { font-family: var(--font-body); font-size: 12.5px; }
+.why { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+.why h2 { margin: 0 0 6px; font: 600 13.5px/1.2 var(--font-body); }
+.why ol { margin: 0; padding-left: 20px; display: grid; gap: 4px; max-width: 95ch; }
+.why p { margin: 8px 0 0; max-width: 95ch; color: var(--muted); font-size: 14px; }
+.legendRow { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--muted); }
+.legendRow i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+@media (max-width: 560px) { .stage canvas { aspect-ratio: 1.1; } }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:4px">
+    <div class="code">MTLE 4150</div>
+    <h1>Spiral Growth on a Dislocation</h1>
+  </header>
+  <p class="lede">A kinetic Monte Carlo model of a close-packed (111) crystal facet growing from its vapor. Atoms land, hop across the terraces, stick at steps or leave again, with rates set by how many neighbors they have. A dislocation threading the facet leaves a step that ends at its core. Attaching atoms make the step turn around the core and wind into a spiral, so the crystal can keep growing without ever having to start a new layer.</p>
+
+  <div class="stage" id="stage">
+    <canvas id="view" aria-label="Top view of the crystal facet, colored by height, with steps drawn as dark lines"></canvas>
+    <div class="key" id="key">
+      <span>Height, one color per layer</span>
+      <span class="bar" id="hbar"></span>
+      <span class="ticks"><span>layer n</span><span>n + 6</span></span>
+      <span id="keyStep"><i style="background:#22262c;border-radius:2px;height:4px;width:14px;outline:1px solid var(--muted)"></i>steps (edge of the upper layer)</span>
+      <span id="keyCore"><i style="background:#ffffff;outline:2px solid #c4471c"></i>dislocation core (line in 3D)</span>
+    </div>
+    <div class="readout" id="readout"></div>
+    <div class="runbar">
+      <button class="btn primary small" id="run" type="button">Pause</button>
+      <button class="btn small" id="restart" type="button">Start over</button>
+    </div>
+  </div>
+
+  <div class="steps">
+    <section class="step">
+      <h2><b>1</b>Crystal</h2>
+      <fieldset class="seg">
+        <legend>Dislocations through the facet</legend>
+        <label><input type="radio" name="mode" value="single" checked><span>One</span></label>
+        <label><input type="radio" name="mode" value="pair+-"><span>Pair, opposite</span></label>
+        <label><input type="radio" name="mode" value="pair++"><span>Pair, same sign</span></label>
+        <label><input type="radio" name="mode" value="none"><span>None</span></label>
+      </fieldset>
+      <div class="field" id="sepField" hidden>
+        <label for="sep"><span>Distance between the pair (atoms)</span> <output id="sepOut">40</output></label>
+        <input type="range" id="sep" min="2" max="80" step="1" value="40">
+      </div>
+      <fieldset class="seg">
+        <legend>Facet width</legend>
+        <label><input type="radio" name="size" value="120"><span>120 atoms</span></label>
+        <label><input type="radio" name="size" value="180" checked><span>180</span></label>
+        <label><input type="radio" name="size" value="260"><span>260</span></label>
+        <label><input type="radio" name="size" value="360"><span>360</span></label>
+      </fieldset>
+    </section>
+
+    <section class="step">
+      <h2><b>2</b>Growth conditions</h2>
+      <div class="field">
+        <label for="dmu"><span>Supersaturation Δμ/k<sub>B</sub>T</span> <input type="number" id="dmuNum" min="-1" max="2" step="0.05" value="0.4" aria-label="Supersaturation"></label>
+        <input type="range" id="dmu" min="-1" max="2" step="0.05" value="0.4">
+      </div>
+      <div class="field">
+        <label for="kT"><span>Temperature k<sub>B</sub>T/φ</span> <input type="number" id="kTNum" min="0.2" max="1.5" step="0.01" value="0.3" aria-label="Temperature in units of the bond energy"></label>
+        <input type="range" id="kT" min="0.2" max="1.5" step="0.01" value="0.3">
+      </div>
+      <p class="note">φ is the energy of one bond between neighboring atoms. Δμ is how far the vapor is from equilibrium with the crystal: 0 is equilibrium, negative evaporates the crystal. The flat facet turns rough near k<sub>B</sub>T/φ ≈ 0.85 (the roughening transition). Above it it grows without steps.</p>
+    </section>
+
+    <section class="step">
+      <h2><b>3</b>Surface diffusion</h2>
+      <div class="field">
+        <label for="D"><span>Hop rate of a free adatom, D/ν</span> <output id="DOut">20</output></label>
+        <input type="range" id="D" min="0" max="6" step="1" value="4">
+      </div>
+      <p class="note">How many times an adatom with no neighbors hops before it would evaporate. More hops means atoms travel farther to reach a step, so fewer islands nucleate on the terraces. Each hop or evaporation slows by e<sup>−nφ/k<sub>B</sub>T</sup> for an atom with n neighbors.</p>
+    </section>
+
+    <section class="step">
+      <h2><b>4</b>View</h2>
+      <fieldset class="seg">
+        <legend>View</legend>
+        <label><input type="radio" name="vmode" value="top" checked><span>Top</span></label>
+        <label><input type="radio" name="vmode" value="3d"><span>3D</span></label>
+      </fieldset>
+      <div class="field" id="exField" hidden>
+        <label for="ex"><span>Height exaggeration</span> <output id="exOut">5×</output></label>
+        <input type="range" id="ex" min="1" max="15" step="1" value="5">
+        <p class="note" style="margin:0">Drag to rotate, scroll or pinch to zoom. One layer is 0.82 atom spacings high, so a true-scale hillock looks flat.</p>
+      </div>
+      <label class="check"><input type="checkbox" id="steps" checked> Draw the steps</label>
+      <label class="check"><input type="checkbox" id="cores" checked> Mark the dislocation cores</label>
+      <div class="field">
+        <label for="speed">Speed <output id="speedOut">medium</output></label>
+        <input type="range" id="speed" min="1" max="5" step="1" value="3">
+      </div>
+    </section>
+
+  </div>
+
+  <section class="why">
+    <h2>What to look for</h2>
+    <ol>
+      <li>The step starts straight, running from the core to the right edge. The rest of the facet is a gentle ramp (the color shifts smoothly around the core), because the screw displacement lifts the lattice by one layer per turn.</li>
+      <li>Atoms attach all along the step, so every part of it advances at about the same speed. Close to the core that means a faster turn, and the step winds up.</li>
+      <li>It settles into a spiral whose turns are evenly spaced and rotate steadily. Each turn adds one layer. The spacing is set by the smallest island that can survive at that Δμ: raise Δμ and the spiral tightens.</li>
+      <li>A pair of opposite sign makes closed loops that spread out, as long as the two cores are farther apart than that critical island size; bring them closer and the source shuts off. A pair of the same sign makes two interleaved spirals.</li>
+    </ol>
+    <p>Model: solid-on-solid crystal on a triangular lattice (each column of atoms has six neighbors), rejection-free kinetic Monte Carlo. Adsorption rate ν e<sup>Δμ/k<sub>B</sub>T − 3φ/k<sub>B</sub>T</sup> per site, so Δμ = 0 balances evaporation from a kink site, which has three of its six neighbors. Time is in units of 1/ν.</p>
+  </section>
+</div>
+
+<script>
+// Kinetic Monte Carlo, solid-on-solid model of a close-packed (111) facet (triangular lattice of columns).
+// Energy: -phi per lateral nearest-neighbour bond. Rates (units of the attempt frequency nu):
+//   adsorption on any column     k+ = exp(dmu/kT - 3 phi/kT)    (3 = bonds of a kink site, so dmu = 0 is equilibrium)
+//   desorption of a top atom     k-(n) = exp(-n phi/kT)
+//   hop of a top atom to a neighbouring column   D/6 * exp(-n phi/kT) per direction
+// Screw dislocations: each has a cut along +x from its core to the edge; a bond that crosses the cut sees the
+// neighbouring column shifted by b = +/-1 layer, so the facet carries a monolayer step that can never vanish.
+// Rejection-free (n-fold way) event selection: columns are kept in lists by their bond count n.
+function createKMC(opt) {
+  opt = opt || {};
+  const W = opt.W || 150, H = opt.H || Math.round((opt.W || 150) * 2 / Math.sqrt(3) / 2) * 2;
+  const N = W * H, S3 = Math.sqrt(3) / 2;
+  const hgt = new Int32Array(N);
+  const nb = new Int32Array(6 * N), off = new Int8Array(6 * N);       // neighbour index (-1 = outside) and layer offset
+  const px = new Float64Array(N), py = new Float64Array(N);
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) { const s = j * W + i; px[s] = i + 0.5 * (j & 1); py[s] = j * S3; }
+  // dislocations: {x, y, b}; cores sit between lattice rows and columns
+  const dis = [];
+  const yc = (Math.floor(H / 2) + 0.5) * S3;
+  const mode = opt.mode || "single";
+  if (mode === "single") dis.push({ x: W / 2 + 0.25, y: yc, b: 1 });
+  else if (mode === "pair+-") { const d = opt.sep || Math.round(W / 4); dis.push({ x: W / 2 - d / 2 + 0.25, y: yc, b: 1 }, { x: W / 2 + d / 2 + 0.25, y: yc, b: -1 }); }
+  else if (mode === "pair++") { const d = opt.sep || Math.round(W / 4); dis.push({ x: W / 2 - d / 2 + 0.25, y: yc - 0 * S3, b: 1 }, { x: W / 2 + d / 2 + 0.25, y: yc + 2 * S3, b: 1 }); }
+  // neighbours on the triangular lattice (rows offset by half a spacing)
+  const dirsEven = [[1, 0], [-1, 0], [0, 1], [-1, 1], [0, -1], [-1, -1]], dirsOdd = [[1, 0], [-1, 0], [1, 1], [0, 1], [1, -1], [0, -1]];
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    const s = j * W + i, D = (j & 1) ? dirsOdd : dirsEven;
+    for (let k = 0; k < 6; k++) {
+      const ii = i + D[k][0], jj = j + D[k][1];
+      if (ii < 0 || ii >= W || jj < 0 || jj >= H) { nb[6 * s + k] = -1; continue; }
+      const t = jj * W + ii; nb[6 * s + k] = t;
+      let o = 0;
+      for (const c of dis) {
+        const y1 = py[s], y2 = py[t];
+        if ((y1 < c.y) === (y2 < c.y)) continue;
+        const xc = px[s] + (c.y - y1) / (y2 - y1) * (px[t] - px[s]);
+        if (xc > c.x) o += (y1 < c.y ? 1 : -1) * c.b;
+      }
+      off[6 * s + k] = o;
+    }
+  }
+  // the smooth part of the screw displacement, for drawing true heights: z = h - sum b * theta / 2pi
+  const ramp = new Float64Array(N);
+  for (let s = 0; s < N; s++) for (const c of dis) {
+    let th = Math.atan2(py[s] - c.y, px[s] - c.x); if (th < 0) th += 2 * Math.PI;
+    ramp[s] -= c.b * th / (2 * Math.PI);
+  }
+
+  const sim = { W, H, N, h: hgt, nb, off, px, py, ramp, dis, time: 0, events: 0, kT: opt.kT || 0.5, dmu: opt.dmu != null ? opt.dmu : 1, D: opt.D != null ? opt.D : 20, deposited: 0 };
+  // bond count of the top atom of column s (level hgt[s]). Mirror boundary: a missing neighbour is replaced by the
+  // column on the opposite side, so the edge of the simulated patch neither attracts nor repels atoms.
+  const OPP = [1, 0, 5, 4, 3, 2];
+  function bonds(s) {
+    const L = hgt[s]; let n = 0;
+    for (let k = 0; k < 6; k++) {
+      let t = nb[6 * s + k], o = off[6 * s + k];
+      if (t < 0) { const k2 = OPP[k]; t = nb[6 * s + k2]; o = off[6 * s + k2]; if (t < 0) { n++; continue; } }
+      if (hgt[t] + o >= L) n++;
+    }
+    return n;
+  }
+  // lists by bond count
+  const cnt = new Int32Array(7), list = Array.from({ length: 7 }, () => new Int32Array(N)), pos = new Int32Array(N), cls = new Int8Array(N);
+  function put(s, n) { cls[s] = n; pos[s] = cnt[n]; list[n][cnt[n]++] = s; }
+  function take(s) { const n = cls[s], p = pos[s], last = list[n][--cnt[n]]; list[n][p] = last; pos[last] = p; }
+  function refresh(s) { const n = bonds(s); if (n !== cls[s]) { take(s); put(s, n); } }
+  function refreshAround(s) { refresh(s); for (let k = 0; k < 6; k++) { const t = nb[6 * s + k]; if (t >= 0) refresh(t); } }
+  for (let s = 0; s < N; s++) put(s, bonds(s));
+
+  let rate = new Float64Array(7), kPlus = 0;
+  function rates() {
+    const K = 1 / sim.kT;
+    kPlus = Math.exp(sim.dmu - 3 * K);
+    for (let n = 0; n < 7; n++) rate[n] = (1 + sim.D) * Math.exp(-n * K);  // desorb + hop, per column with n bonds
+  }
+  sim.rates = rates;
+  rates();
+
+  sim.run = function (nEvents) {
+    rates();
+    const Dfrac = sim.D / (1 + sim.D);
+    for (let e = 0; e < nEvents; e++) {
+      let tot = N * kPlus; for (let n = 0; n < 7; n++) tot += cnt[n] * rate[n];
+      sim.time += -Math.log(1 - Math.random()) / tot;
+      let u = Math.random() * tot;
+      if (u < N * kPlus) {                                   // adsorption
+        const s = (Math.random() * N) | 0; hgt[s]++; sim.deposited++; refreshAround(s); continue;
+      }
+      u -= N * kPlus;
+      let n = 0; for (; n < 6; n++) { const r = cnt[n] * rate[n]; if (u < r) break; u -= r; }
+      if (cnt[n] === 0) continue;
+      const s = list[n][(Math.random() * cnt[n]) | 0];
+      if (Math.random() >= Dfrac) { hgt[s]--; sim.deposited--; refreshAround(s); continue; }   // desorption
+      // hop to a random neighbour column (lands on top of it); an edge column cannot hop out
+      const t = nb[6 * s + ((Math.random() * 6) | 0)];
+      if (t < 0) continue;
+      hgt[s]--; hgt[t]++; refreshAround(s); refreshAround(t);
+    }
+    sim.events += nEvents;
+  };
+  // true height (layers) of column s, continuous across the cuts
+  sim.z = s => hgt[s] + ramp[s];
+  sim.mean = function () { let m = 0; for (let s = 0; s < N; s++) m += hgt[s]; return m / N; };
+  // a column is on a step edge if a neighbour is lower; lone adatoms and dimers (fewer than 2 bonds) don't count
+  sim.bondsOf = s => cls[s];
+  sim.isEdge = function (s) {
+    const L = hgt[s]; if (cls[s] < 2) return false;
+    for (let k = 0; k < 6; k++) { const t = nb[6 * s + k]; if (t >= 0 && hgt[t] + off[6 * s + k] < L) return true; }
+    return false;
+  };
+  return sim;
+}
+if (typeof module !== "undefined") module.exports = { createKMC };
+
+
+// ---------- page ----------
+const $ = id => document.getElementById(id);
+const DVALS = [0, 1, 3, 10, 20, 50, 100];
+const opt = { mode: "single", W: 180, kT: 0.3, dmu: 0.4, D: 20, sep: 40 };
+let sim, running = true, speedLevel = 3, showSteps = true, showCores = true, vmode = "top", exag = 5;
+const cam = { az: -Math.PI / 2 + 0.35, el: 0.62, zoom: 1 };
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const PALHEX = ["#d4524e", "#e9a23b", "#79a85a", "#2a9d8f", "#3a72b0", "#8a63a8"];
+const PAL = PALHEX.map(h => [1, 3, 5].map(k => parseInt(h.slice(k, k + 2), 16)));
+$("hbar").style.background = `linear-gradient(90deg, ${[...PALHEX, PALHEX[0]].join(",")})`;
+let C = {};
+function readColors() {
+  const cs = getComputedStyle(document.documentElement), g = n => cs.getPropertyValue(n).trim();
+  C = { scene: g("--scene"), fg: g("--fg"), muted: g("--muted"), line: g("--line"), accent: g("--accent"), dark: cs.colorScheme === "dark" };
+}
+readColors();
+const redrawAll = () => { readColors(); draw(); };
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", redrawAll);
+new MutationObserver(redrawAll).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+// ---------- runs ----------
+const RUNCOL = ["#c4471c", "#2a6fb5", "#2f8f5b", "#8a4fb0", "#b08a1c", "#5a6574"];
+let runs = [], run = null;
+function label() {
+  const m = { single: "one dislocation", "pair+-": `pair −/+, ${opt.sep} apart`, "pair++": `pair +/+, ${opt.sep} apart`, none: "no dislocation" }[opt.mode];
+  return `${m}, Δμ/kT ${opt.dmu.toFixed(2)}, kT/φ ${opt.kT.toFixed(2)}, D ${opt.D}`;
+}
+function newSim() {
+  sim = createKMC({ W: opt.W, mode: opt.mode, sep: opt.sep, kT: opt.kT, dmu: opt.dmu, D: opt.D });
+  run = { label: label(), col: RUNCOL[runs.length % RUNCOL.length], pts: [[0, 0]] };
+  runs.push(run); if (runs.length > 6) runs.shift();
+  rateHist = [[0, 0]];
+  buildImage(); draw();
+}
+// a change of conditions mid-run starts a new curve from the current state
+function markChange() {
+  if (!sim) return;
+  const m = sim.mean();
+  run = { label: label(), col: RUNCOL[(runs.length) % RUNCOL.length], pts: [[sim.time, m]], t0: sim.time };
+  runs.push(run); if (runs.length > 6) runs.shift();
+  rateHist = [[sim.time, m]];
+}
+
+// ---------- drawing: one pixel pair per column of atoms ----------
+const view = $("view"), vctx = view.getContext("2d");
+let off, offCtx, img;
+function buildImage() {
+  off = document.createElement("canvas"); off.width = 2 * sim.W + 1; off.height = sim.H;
+  offCtx = off.getContext("2d"); img = offCtx.createImageData(off.width, off.height);
+}
+function fitCanvas(c) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2), w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  return { dpr, w, h };
+}
+function draw() { if (!sim) return; if (vmode === "3d") draw3D(); else draw2D(); }
+function draw2D() {
+  const W = sim.W, H = sim.H, d = img.data, IW = off.width, h = sim.h, nb = sim.nb, offs = sim.off, ramp = sim.ramp;
+  const bg = C.dark ? [18, 24, 33] : [255, 255, 255], edge = C.dark ? [10, 12, 16] : [34, 38, 44];
+  for (let q = 0; q < d.length; q += 4) { d[q] = bg[0]; d[q + 1] = bg[1]; d[q + 2] = bg[2]; d[q + 3] = 255; }
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    const s = j * W + i, z = h[s] + ramp[s];
+    const u = ((z % 6) + 6) % 6, k = Math.floor(u), f = u - k, a = PAL[k], b = PAL[(k + 1) % 6];
+    let r = a[0] + (b[0] - a[0]) * f, g = a[1] + (b[1] - a[1]) * f, bl = a[2] + (b[2] - a[2]) * f;
+    if (showSteps) {
+      let lower = false; const L = h[s];
+      if (sim.bondsOf(s) >= 2)   // lone adatoms and dimers are not steps
+      for (let n = 0; n < 6; n++) { const t = nb[6 * s + n]; if (t >= 0 && h[t] + offs[6 * s + n] < L) { lower = true; break; } }
+      if (lower) { r = edge[0]; g = edge[1]; bl = edge[2]; }
+    }
+    const x = 2 * i + (j & 1), y = H - 1 - j, p = 4 * (y * IW + x);
+    d[p] = d[p + 4] = r; d[p + 1] = d[p + 5] = g; d[p + 2] = d[p + 6] = bl;
+  }
+  offCtx.putImageData(img, 0, 0);
+  const { dpr, w, h: ch } = fitCanvas(view), ctx = vctx;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = C.scene; ctx.fillRect(0, 0, w, ch);
+  // keep the lattice geometry: columns 1 apart in x, rows √3/2 apart
+  const narrow = matchMedia("(max-width: 560px)").matches, padTop = narrow ? 8 : 16, padBot = narrow ? 8 : 16;
+  const side = narrow ? 12 : Math.min(300, 0.27 * w);
+  const sx = Math.min((w - 2 * side) / (W + 0.5), (ch - padTop - padBot) / (H * Math.sqrt(3) / 2));
+  const dw = sx * (2 * W + 1) / 2, dh = sx * H * Math.sqrt(3) / 2, ox = (w - dw) / 2, oy = padTop + (ch - padTop - padBot - dh) / 2;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(off, ox, oy, dw, dh);
+  if (showCores) for (const c of sim.dis) {
+    const rowh = sx * Math.sqrt(3) / 2, X = ox + (c.x + 0.5) * sx, Y = oy + dh - c.y * sx - 0.5 * rowh;
+    ctx.beginPath(); ctx.arc(X, Y, Math.max(4, 1.6 * sx), 0, 2 * Math.PI);
+    ctx.fillStyle = "#ffffff"; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = C.accent; ctx.stroke();
+  }
+  readout();
+}
+
+// ---------- 3D: z-buffered splats, one per column, plus the risers of steps and the sides of the crystal ----------
+let zbuf = null, img3 = null;
+const HZ = Math.sqrt(2 / 3);                                         // (111) layer spacing in atom spacings
+function draw3D() {
+  const ctx = vctx, dpr = Math.min(window.devicePixelRatio || 1, 1.5), w = view.clientWidth, ch = view.clientHeight;
+  const Wp = Math.max(1, Math.round(w * dpr)), Hp = Math.max(1, Math.round(ch * dpr));
+  if (view.width !== Wp || view.height !== Hp) { view.width = Wp; view.height = Hp; }
+  if (!img3 || img3.width !== Wp || img3.height !== Hp) { img3 = ctx.createImageData(Wp, Hp); zbuf = new Float32Array(Wp * Hp); }
+  const d = img3.data, d32 = new Uint32Array(d.buffer);
+  const bgc = C.dark ? [18, 24, 33] : [255, 255, 255];
+  d32.fill((255 << 24) | (bgc[2] << 16) | (bgc[1] << 8) | bgc[0]); zbuf.fill(-1e30);
+  const W = sim.W, H = sim.H, N = sim.N, h = sim.h, ramp = sim.ramp, nb = sim.nb, offs = sim.off, px = sim.px, py = sim.py;
+  const ez = exag * HZ;
+  let zmin = 1e9, zmax = -1e9;
+  for (let s = 0; s < N; s++) { const z = h[s] + ramp[s]; if (z < zmin) zmin = z; if (z > zmax) zmax = z; }
+  const zc = 0.5 * (zmin + zmax), base = zmin - 2.5;
+  const ca = Math.cos(cam.az), sa = Math.sin(cam.az), ce = Math.cos(cam.el), se = Math.sin(cam.el);
+  const rt = [-sa, ca], up = [-se * ca, -se * sa, ce], cv = [ce * ca, ce * sa, se];
+  const Xc = (W - 0.5) / 2, Yc = (H - 1) * Math.sqrt(3) / 4;
+  const ext = Math.hypot(W, H * Math.sqrt(3) / 2);
+  const narrow = matchMedia("(max-width: 560px)").matches;
+  const S = Math.min(Wp * (narrow ? 1.0 : 0.8), Hp * 1.05) / ext / cam.zoom;    // device px per atom spacing
+  const ox = Wp / 2, oy = Hp / 2 + (narrow ? 0 : 0.03 * Hp);
+  const sp = Math.max(1, Math.ceil(S * 1.15)), half = sp / 2;
+  const L = [-0.45, 0.35, 0.82], Ln = Math.hypot(...L); L[0] /= Ln; L[1] /= Ln; L[2] /= Ln;
+  const edgeC = C.dark ? [10, 12, 16] : [34, 38, 44];
+  const pxPerZ = S * ce;                                          // screen px per (exaggerated) height unit
+  for (let s = 0; s < N; s++) {
+    const z = h[s] + ramp[s], X = px[s] - Xc, Y = py[s] - Yc, Z = (z - zc) * ez;
+    const sxp = ox + S * (X * rt[0] + Y * rt[1]), syp = oy - S * (X * up[0] + Y * up[1] + Z * up[2]);
+    if (sxp < -sp || sxp > Wp + sp || syp < -sp || syp > Hp + 4 * sp + 1e4) continue;
+    const dep = X * cv[0] + Y * cv[1] + Z * cv[2];
+    // color: height palette, shaded by the local slope; step edges dark
+    const u = ((z % 6) + 6) % 6, k = Math.floor(u), f = u - k, a = PAL[k], b = PAL[(k + 1) % 6];
+    let r = a[0] + (b[0] - a[0]) * f, g = a[1] + (b[1] - a[1]) * f, bl = a[2] + (b[2] - a[2]) * f;
+    let lowest = z, onEdge = false, isStep = false;
+    let gx = 0, gy = 0;
+    for (let n = 0; n < 6; n++) {
+      const t = nb[6 * s + n];
+      if (t < 0) { onEdge = true; continue; }
+      const zt = h[t] + ramp[t];
+      if (zt < lowest) lowest = zt;
+      if (h[t] + offs[6 * s + n] < h[s]) isStep = true;
+      const dx = px[t] - px[s], dy = py[t] - py[s];
+      gx += (zt - z) * dx; gy += (zt - z) * dy;
+    }
+    // least-squares slope on the hexagon (sum of dx^2 over 6 neighbors = 3)
+    const nx = -gx / 3 * ez, ny = -gy / 3 * ez, nl = Math.hypot(nx, ny, 1);
+    const lam = Math.max(0, (nx * L[0] + ny * L[1] + L[2]) / nl), shade = 0.5 + 0.55 * lam;
+    if (showSteps && isStep && sim.bondsOf(s) >= 2) { r = edgeC[0]; g = edgeC[1]; bl = edgeC[2]; }
+    const R1 = Math.min(255, r * shade) | 0, G1 = Math.min(255, g * shade) | 0, B1 = Math.min(255, bl * shade) | 0;
+    const top = (255 << 24) | (B1 << 16) | (G1 << 8) | R1;
+    const x0 = Math.max(0, Math.round(sxp - half)), x1 = Math.min(Wp, Math.round(sxp + half));
+    const y0 = Math.max(0, Math.round(syp - half)), y1 = Math.min(Hp, Math.round(syp + half));
+    for (let yy = y0; yy < y1; yy++) { let q = yy * Wp + x0; for (let xx = x0; xx < x1; xx++, q++) if (dep > zbuf[q]) { zbuf[q] = dep; d32[q] = top; } }
+    // riser down to the lowest neighbor (or to the base on the crystal's sides)
+    const zlow = onEdge ? base : lowest;
+    if (zlow < z - 0.05 && ce > 0.02 && (onEdge || sim.bondsOf(s) >= 2)) {   // lone adatoms: top only, no stalk
+      const len = (z - zlow) * ez * pxPerZ, ys = Math.round(syp + half), ye = Math.min(Hp, Math.round(syp + half + len));
+      const rs = onEdge && lowest >= z - 0.05 ? 0.62 : 0.55;
+      const R2 = (r * rs) | 0, G2 = (g * rs) | 0, B2 = (bl * rs) | 0, sideC = (255 << 24) | (B2 << 16) | (G2 << 8) | R2;
+      for (let yy = Math.max(0, ys); yy < ye; yy++) {
+        const dd = dep - ((yy - syp) / pxPerZ) * se;
+        let q = yy * Wp + x0;
+        for (let xx = x0; xx < x1; xx++, q++) if (dd > zbuf[q]) { zbuf[q] = dd; d32[q] = sideC; }
+      }
+    }
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.putImageData(img3, 0, 0);
+  if (showCores) {
+    // the dislocation line: through the crystal, along the facet normal
+    for (const c of sim.dis) {
+      const X = c.x - Xc, Y = c.y - Yc, P = Z => [ox + S * (X * rt[0] + Y * rt[1]), oy - S * (X * up[0] + Y * up[1] + Z * up[2])];
+      const a = P((base - zc) * ez), b = P((zmax + 4 - zc) * ez);
+      for (const [col, lw] of [["#ffffff", 5.5], [C.accent, 3]]) {
+        ctx.strokeStyle = col; ctx.lineWidth = lw * dpr; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+      }
+    }
+  }
+  readout();
+}
+// drag to rotate, wheel or pinch to zoom (3D view only)
+const ptrs = new Map(); let pinch0 = 0, zoom0 = 1;
+view.addEventListener("pointerdown", e => { if (vmode !== "3d") return; view.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+  if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch0 = Math.hypot(a[0] - b[0], a[1] - b[1]); zoom0 = cam.zoom; } });
+view.addEventListener("pointermove", e => {
+  if (!ptrs.has(e.pointerId)) return;
+  const p = ptrs.get(e.pointerId), dx = e.clientX - p[0], dy = e.clientY - p[1]; ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+  if (ptrs.size === 1) { cam.az -= dx * 0.008; cam.el = Math.min(1.5707, Math.max(0.1, cam.el + dy * 0.008)); }
+  else if (ptrs.size === 2 && pinch0 > 0) { const [a, b] = [...ptrs.values()]; cam.zoom = Math.min(3, Math.max(0.3, zoom0 * pinch0 / Math.hypot(a[0] - b[0], a[1] - b[1]))); }
+  if (!running) draw();
+});
+const endPtr = e => { ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch0 = 0; };
+view.addEventListener("pointerup", endPtr); view.addEventListener("pointercancel", endPtr);
+view.addEventListener("wheel", e => { if (vmode !== "3d") return; e.preventDefault(); cam.zoom = Math.min(3, Math.max(0.3, cam.zoom * Math.exp(e.deltaY * 0.0012))); if (!running) draw(); }, { passive: false });
+
+let rateHist = [[0, 0]], growthRate = 0;
+function readout() {
+  const m = sim.mean();
+  $("readout").innerHTML =
+    `t = ${fmtT(sim.time)} / ν<br>grown ${m.toFixed(2)} layers<br>` +
+    `growth rate ${(growthRate * 1000).toPrecision(3)} layers per 1000/ν<br>` +
+    `Δμ/k<sub>B</sub>T ${sim.dmu.toFixed(2)} · k<sub>B</sub>T/φ ${sim.kT.toFixed(2)}`;
+}
+function fmtT(t) { return Math.round(t).toLocaleString("en-US"); }
+
+// ---------- loop ----------
+const SPEEDS = [20000, 60000, 150000, 400000, 1000000], SPEEDNAME = ["very slow", "slow", "medium", "fast", "very fast"];
+let lastTick = 0, lastChart = 0;
+function tick() {
+  const now = performance.now();
+  if (running && sim) {
+    try {
+      const want = SPEEDS[speedLevel - 1] * (reduceMotion ? 0.5 : 1), t0 = performance.now();
+      let n = 0;
+      while (n < want) { sim.run(10000); n += 10000; if (performance.now() - t0 > 30) break; }
+      const m = sim.mean();
+      run.pts.push([sim.time, m]); if (run.pts.length > 4000) run.pts = run.pts.filter((_, k) => k % 2 === 0 || k === run.pts.length - 1);
+      rateHist.push([sim.time, m]);
+      while (rateHist.length > 2 && sim.time - rateHist[0][0] > Math.max(200, 0.3 * (sim.time - (run.t0 || 0)))) rateHist.shift();
+      const [t1, m1] = rateHist[0]; growthRate = sim.time > t1 ? (m - m1) / (sim.time - t1) : 0;
+    } catch (e) { console.error(e); }
+    try { draw(); } catch (e) { console.error(e); }
+  }
+  lastTick = now;
+}
+function frame() { tick(); requestAnimationFrame(frame); }
+setInterval(() => { if (performance.now() - lastTick > 80) tick(); }, 50);
+
+// ---------- controls ----------
+document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener("change", () => {
+  opt.mode = r.value; $("sepField").hidden = !opt.mode.startsWith("pair"); newSim();
+}));
+document.querySelectorAll('input[name="size"]').forEach(r => r.addEventListener("change", () => {
+  opt.W = +r.value; $("sep").max = Math.round(opt.W * 0.6); if (opt.sep > +$("sep").max) { opt.sep = +$("sep").max; $("sep").value = opt.sep; $("sepOut").textContent = opt.sep; } newSim();
+}));
+$("sep").addEventListener("input", e => { $("sepOut").textContent = e.target.value; });
+$("sep").addEventListener("change", e => { opt.sep = +e.target.value; newSim(); });
+function bindNum(id, lo, hi, key, apply) {
+  const set = v => {
+    v = Math.min(hi, Math.max(lo, +v)); if (!isFinite(v)) return;
+    opt[key] = v; $(id).value = v; if (document.activeElement !== $(id + "Num")) $(id + "Num").value = v;
+    if (sim) { apply(v); markChange(); draw(); }
+  };
+  $(id).addEventListener("input", e => { $(id + "Num").value = e.target.value; set(e.target.value); });
+  $(id + "Num").addEventListener("change", e => set(e.target.value));
+}
+bindNum("dmu", -1, 2, "dmu", v => sim.dmu = v);
+bindNum("kT", 0.2, 1.5, "kT", v => sim.kT = v);
+$("D").addEventListener("input", e => {
+  opt.D = DVALS[+e.target.value]; $("DOut").textContent = opt.D; if (sim) { sim.D = opt.D; markChange(); }
+});
+document.querySelectorAll('input[name="vmode"]').forEach(r => r.addEventListener("change", () => {
+  vmode = r.value; $("exField").hidden = vmode !== "3d"; $("stage").classList.toggle("is3d", vmode === "3d"); draw();
+}));
+$("ex").addEventListener("input", e => { exag = +e.target.value; $("exOut").textContent = exag + "×"; draw(); });
+$("steps").addEventListener("change", e => { showSteps = e.target.checked; $("keyStep").hidden = !showSteps; draw(); });
+$("cores").addEventListener("change", e => { showCores = e.target.checked; $("keyCore").hidden = !showCores; draw(); });
+$("speed").addEventListener("input", e => { speedLevel = +e.target.value; $("speedOut").textContent = SPEEDNAME[speedLevel - 1]; });
+$("run").addEventListener("click", () => { running = !running; $("run").textContent = running ? "Pause" : "Run"; });
+$("restart").addEventListener("click", () => newSim());
+new ResizeObserver(() => draw()).observe(document.body);
+
+newSim();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
