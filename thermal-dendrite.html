@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Thermal Dendrite Growth</title>
+<meta name="description" content="2D phase-field model (Kobayashi) of a flat solidification front growing into undercooled liquid and breaking up into thermal dendrites. Adjustable undercooling, latent heat, anisotropy and noise. MTLE 4150, Professor Yunfeng Shi, RPI.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,600&display=swap">
+<style>
+/* Layout: the simulation box fills the bench; the controls follow the order of an experiment (sample, temperature, how to look, what to measure) */
+:root {
+  --bg: #eef1f4;
+  --panel: #fbfcfd;
+  --fg: #18212c;
+  --muted: #5a6574;
+  --line: #d5dbe3;
+  --accent: #c4471c;
+  --scene: #ffffff;
+  --cn6: #c8d0db;          /* bulk: six neighbors */
+  --cn5: #2166c4;          /* five neighbors */
+  --cn7: #d63027;          /* seven neighbors */
+  --cn4: #e39a12;          /* four or fewer */
+  --cn8: #7b3fb5;          /* eight or more */
+  --solute: #1c2129;       /* second species */
+  --plain: #7f8da0;
+  --plot: #c4471c;
+  --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f141b; --panel: #161d26; --fg: #e5eaf0; --muted: #96a2b2; --line: #29323e;
+    --accent: #ff7a4a; --scene: #121821; --cn6: #364253; --cn5: #5aa0ff; --cn7: #ff5c50; --cn4: #ffc23d; --cn8: #c08cff; --solute: #f2f4f7;
+    --plain: #8a99ad; --plot: #ff7a4a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f141b; --panel: #161d26; --fg: #e5eaf0; --muted: #96a2b2; --line: #29323e;
+  --accent: #ff7a4a; --scene: #121821; --cn6: #364253; --cn5: #5aa0ff; --cn7: #ff5c50; --cn4: #ffc23d; --cn8: #c08cff; --solute: #f2f4f7;
+  --plain: #8a99ad; --plot: #ff7a4a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+.code { font: 500 13px var(--font-mono); letter-spacing: .08em; color: var(--accent); }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 28px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 14px; }
+h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(26px, 3.4vw, 34px); line-height: 1.1; margin: 0; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); max-width: 80ch; }
+.stage { position: relative; background: var(--scene); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  height: min(66vh, 640px); min-height: 340px; }
+.stage canvas { display: block; width: 100%; height: 100%; }
+.key { position: absolute; left: 12px; top: 12px; display: grid; gap: 4px; font-size: 13px;
+  background: color-mix(in srgb, var(--scene) 85%, transparent); padding: 8px 10px; border-radius: 8px; }
+.key span { display: flex; align-items: center; gap: 8px; }
+.key i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; }
+.key .wheel { width: 120px; height: 10px; border-radius: 5px;
+  background: linear-gradient(90deg, hsl(0 65% 55%), hsl(60 65% 55%), hsl(120 65% 55%), hsl(180 65% 55%), hsl(240 65% 55%), hsl(300 65% 55%), hsl(360 65% 55%)); }
+.key .ticks { display: flex; justify-content: space-between; width: 120px; font: 11px var(--font-mono); color: var(--muted); }
+.readout { position: absolute; right: 12px; top: 12px; font: 12.5px/1.55 var(--font-mono); text-align: right;
+  background: color-mix(in srgb, var(--scene) 85%, transparent); padding: 8px 10px; border-radius: 8px; font-variant-numeric: tabular-nums; }
+.runbar { position: absolute; left: 12px; bottom: 12px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 980px) { .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) {
+  .steps { grid-template-columns: minmax(0, 1fr); }
+  /* phone: legend and readout stack above the box instead of covering it */
+  .stage { height: auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; padding: 10px; }
+  .stage canvas { grid-column: 1 / -1; grid-row: 2; aspect-ratio: 1; height: auto; }
+  .key, .readout, .runbar { position: static; padding: 0; background: none; }
+  .key { font-size: 12px; }
+  .readout { font-size: 11px; }
+  .runbar { grid-column: 1 / -1; grid-row: 3; }
+}
+.step { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.step h2 { margin: 0; font: 600 13.5px/1.2 var(--font-body); display: flex; gap: 8px; align-items: center; }
+.step h2 b { font: 600 12px/1 var(--font-mono); width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center;
+  background: var(--fg); color: var(--panel); flex: none; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; border: 0; margin: 0; padding: 0; min-width: 0; }
+.seg legend { font-size: 12.5px; color: var(--muted); padding: 0; margin-bottom: 4px; width: 100%; }
+.seg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.seg span { display: inline-block; font: 500 13px/1 var(--font-body); padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; background: var(--panel); }
+.seg input:checked + span { background: var(--fg); color: var(--panel); border-color: var(--fg); }
+.seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field label { font-size: 13px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.field input[type="number"] { width: 5.4em; font: 13px var(--font-mono); padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--scene); color: var(--fg); text-align: right; }
+.field output, .note { font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.note { margin: 0; line-height: 1.5; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.check input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; flex: none; }
+.btn { font: 600 13px/1 var(--font-body); padding: 9px 13px; border-radius: 8px; cursor: pointer; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
+.btn.primary { background: var(--fg); color: var(--panel); border-color: var(--fg); }
+.btn.small { padding: 6px 10px; font-weight: 500; }
+.btn:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.chart { width: 100%; height: 170px; display: block; }
+.step.wide { grid-column: 1 / -1; }
+.chartRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px); gap: 14px; align-items: start; }
+@media (max-width: 700px) { .chartRow { grid-template-columns: minmax(0, 1fr); } }
+.fit { font: 12.5px/1.5 var(--font-mono); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+
+
+<style>
+.stage { height: auto; min-height: 0; padding: 112px 16px 56px; display: grid; place-items: center; }
+.stage canvas { width: 100%; height: auto; max-height: min(64vh, 620px); object-fit: contain; border-radius: 4px; }
+.key .bar { width: 150px; height: 10px; border-radius: 5px; }
+.key .ticks { width: 150px; }
+.step p.note { font-family: var(--font-body); font-size: 12.5px; }
+.why { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+.why h2 { margin: 0 0 6px; font: 600 13.5px/1.2 var(--font-body); }
+.why ol { margin: 0; padding-left: 20px; display: grid; gap: 4px; max-width: 95ch; }
+.why p { margin: 8px 0 0; max-width: 95ch; color: var(--muted); font-size: 14px; }
+@media (max-width: 560px) { .stage { padding: 10px; } .stage canvas { grid-column: 1 / -1; } }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:4px">
+    <div class="code">MTLE 4150</div>
+    <h1>Thermal Dendrite Growth</h1>
+  </header>
+  <p class="lede">A pure melt solidifying in 2D. The solid on the left starts at the melting point; the liquid on the right is undercooled, and its far wall is kept cold, so the latent heat released at the front has to flow out through the liquid. The front starts flat, but a flat front pushing into colder liquid is unstable: bumps grow into fingers, and the crystal's anisotropy turns them into dendrites. Phase-field model of Kobayashi (1993), in its dimensionless units: the melting point is T = 1 and the latent heat is K.</p>
+
+  <div class="stage" id="stage">
+    <canvas id="view" aria-label="Solidification front: temperature field with the solid–liquid interface drawn as a dark line"></canvas>
+    <div class="key" id="keyT">
+      <span>Temperature</span>
+      <span class="bar" id="tbar"></span>
+      <span class="ticks"><span id="tlo">0.2</span><span>1 (melting)</span></span>
+      <span><i style="background:#1d232b;border-radius:2px;height:3px;width:14px"></i>solid–liquid interface</span>
+    </div>
+    <div class="key" id="keyP" hidden>
+      <span><i style="background:#3d4a5c"></i>solid</span>
+      <span><i style="background:#cfe0f2;outline:1px solid var(--line)"></i>liquid</span>
+    </div>
+    <div class="readout" id="readout"></div>
+    <div class="runbar">
+      <button class="btn primary small" id="run" type="button">Pause</button>
+      <button class="btn small" id="restart" type="button">Start over</button>
+    </div>
+  </div>
+
+  <div class="steps">
+    <section class="step">
+      <h2><b>1</b>Cooling</h2>
+      <div class="field">
+        <label for="T0"><span>Liquid and cold-wall temperature T<sub>0</sub></span> <input type="number" id="T0Num" min="0" max="0.9" step="0.01" value="0.2" aria-label="Liquid temperature"></label>
+        <input type="range" id="T0" min="0" max="0.9" step="0.01" value="0.2">
+      </div>
+      <div class="field">
+        <label for="K"><span>Latent heat K</span> <input type="number" id="KNum" min="1" max="2.2" step="0.05" value="1.6" aria-label="Latent heat"></label>
+        <input type="range" id="K" min="1" max="2.2" step="0.05" value="1.6">
+      </div>
+      <p class="note">Dimensionless undercooling Δ = (1 − T<sub>0</sub>)/K: how far below the melting point the liquid is, compared with the warming that its own latent heat can cause. Larger Δ, faster growth and finer structure. T<sub>0</sub> moves the cold wall at once; the liquid starts at the new T<sub>0</sub> when you start over.</p>
+    </section>
+
+    <section class="step">
+      <h2><b>2</b>Crystal anisotropy</h2>
+      <div class="field">
+        <label for="delta"><span>Strength δ</span> <output id="deltaOut">0.05</output></label>
+        <input type="range" id="delta" min="0" max="0.06" step="0.005" value="0.05">
+      </div>
+      <fieldset class="seg">
+        <legend>Symmetry</legend>
+        <label><input type="radio" name="j" value="4" checked><span>4-fold (cubic)</span></label>
+        <label><input type="radio" name="j" value="6"><span>6-fold (hexagonal)</span></label>
+      </fieldset>
+      <div class="field">
+        <label for="th"><span>Crystal axis tilted from the growth direction</span> <output id="thOut">0°</output></label>
+        <input type="range" id="th" min="0" max="45" step="1" value="0">
+      </div>
+      <p class="note">The interface energy is ε(θ) = ε̄[1 + δ cos j(θ − θ<sub>0</sub>)]. Dendrites grow along the directions where it is highest. With δ = 0 the fingers wander and split instead (seaweed).</p>
+    </section>
+
+    <section class="step">
+      <h2><b>3</b>Noise and size</h2>
+      <div class="field">
+        <label for="noise"><span>Thermal noise at the interface</span> <output id="noiseOut">0.04</output></label>
+        <input type="range" id="noise" min="0" max="0.1" step="0.005" value="0.04">
+      </div>
+      <fieldset class="seg">
+        <legend>Grid</legend>
+        <label><input type="radio" name="size" value="S"><span>300 × 200</span></label>
+        <label><input type="radio" name="size" value="M" checked><span>400 × 300</span></label>
+        <label><input type="radio" name="size" value="L"><span>600 × 400</span></label>
+      </fieldset>
+      <p class="note">Noise seeds the first bumps on the flat front and the side branches later. With none, the front stays flat for a long time.</p>
+    </section>
+
+    <section class="step">
+      <h2><b>4</b>View</h2>
+      <fieldset class="seg">
+        <legend>Color by</legend>
+        <label><input type="radio" name="color" value="T" checked><span>Temperature</span></label>
+        <label><input type="radio" name="color" value="P"><span>Solid / liquid</span></label>
+      </fieldset>
+      <div class="field">
+        <label for="speed">Speed <output id="speedOut">medium</output></label>
+        <input type="range" id="speed" min="1" max="5" step="1" value="3">
+      </div>
+    </section>
+  </div>
+
+  <section class="why">
+    <h2>What to look for</h2>
+    <ol>
+      <li>The flat front advances while the latent heat it releases piles up just ahead of it (the warm band in the liquid).</li>
+      <li>Any bump that sticks out reaches colder liquid and sheds its heat in more directions, so it grows faster than its neighbors: the front is unstable (Mullins–Sekerka). Surface tension smooths very short bumps, so a definite spacing appears.</li>
+      <li>The fingers compete. The leaders warm the liquid around them and hold back their neighbors, so the spacing coarsens. Leading tips sharpen into dendrites and grow side branches from the noise.</li>
+      <li>Tilt the crystal axis: the dendrites grow along the crystal's preferred direction, not straight down the temperature gradient. Switch to 6-fold to see branches at 60°.</li>
+    </ol>
+    <p>Model: τ ∂φ/∂t = ∇·(ε²∇φ) + ∂<sub>y</sub>(εε′∂<sub>x</sub>φ) − ∂<sub>x</sub>(εε′∂<sub>y</sub>φ) + φ(1 − φ)(φ − ½ + m(T) + noise), with m = (0.9/π) arctan[10(1 − T)], and ∂T/∂t = ∇²T + K ∂φ/∂t. φ = 1 is solid, 0 is liquid. Parameters as in Kobayashi (1993): τ = 0.0003, ε̄ = 0.01, grid spacing 0.03, time step 0.0002. Left wall insulated, right wall held at T<sub>0</sub>, periodic top and bottom.</p>
+  </section>
+</div>
+
+<script>
+// Phase-field model of thermal dendrite growth (Kobayashi, Physica D 63, 410 (1993)), 2D, explicit Euler.
+//   tau dphi/dt = div(eps^2 grad phi) + d/dy(eps eps' dphi/dx) - d/dx(eps eps' dphi/dy)
+//                 + phi(1-phi)(phi - 1/2 + m(T)) + a phi(1-phi)(r - 1/2),   m = (alpha/pi) atan(gamma (Teq - T))
+//   dT/dt = lap T + K dphi/dt
+//   eps = epsBar (1 + delta cos(j (theta - theta0))),  theta = angle of grad phi
+// phi = 1 solid, 0 liquid. T is scaled so the melting point is Teq = 1; K is the latent heat in those units.
+// Solid on the left (insulated wall), liquid on the right; the right wall is held at the cold temperature T0.
+// Periodic top and bottom.
+function createPF(opt) {
+  opt = opt || {};
+  const NX = opt.NX || 400, NY = opt.NY || 300, N = NX * NY;
+  const dx = 0.03, dt = 0.0002, tau = 0.0003, epsBar = 0.01, alpha = 0.9, gam = 10, Teq = 1;
+  const phi = new Float32Array(N), T = new Float32Array(N), dphi = new Float32Array(N);
+  const A = new Float32Array(N), B = new Float32Array(N), px = new Float32Array(N), py = new Float32Array(N);
+  const sim = { NX, NY, N, phi, T, dx, dt, time: 0, steps: 0,
+    T0: opt.T0 != null ? opt.T0 : 0, K: opt.K || 1.6, delta: opt.delta != null ? opt.delta : 0.04, j: opt.j || 4,
+    theta0: opt.theta0 || 0, noise: opt.noise != null ? opt.noise : 0.01 };
+  const x0 = Math.round(NX * (opt.front || 0.12));
+  for (let y = 0; y < NY; y++) for (let x = 0; x < NX; x++) {
+    const s = y * NX + x, solid = x < x0;
+    phi[s] = solid ? 1 : 0; T[s] = solid ? Teq : sim.T0;
+  }
+  // smooth the initial front over a few cells so it starts as a proper diffuse interface
+  for (let y = 0; y < NY; y++) for (let x = 0; x < NX; x++) {
+    const s = y * NX + x, d = (x - x0 + 0.5) * dx / 0.03;
+    phi[s] = 0.5 * (1 - Math.tanh(d / 1.5));
+  }
+  let bandLo = Math.max(0, x0 - 6), bandHi = Math.min(NX - 1, x0 + 6);
+  const idx = (x, y) => ((y + NY) % NY) * NX + Math.min(NX - 1, Math.max(0, x));
+  sim.step = function (n) {
+    const K = sim.K, delta = sim.delta, j = sim.j, th0 = sim.theta0, a = sim.noise, T0 = sim.T0;
+    const r2 = 1 / (2 * dx), rdx2 = 1 / (dx * dx);
+    for (let it = 0; it < n; it++) {
+      // gradients, anisotropic eps; cos/sin of j(theta - theta0) from (gx + i gy)^j, no trig per cell
+      const cj = Math.cos(j * th0), sj = Math.sin(j * th0), e0 = epsBar * epsBar;
+      const ga = Math.max(0, bandLo - 4), gb = Math.min(NX - 1, bandHi + 4);
+      for (let y = 0; y < NY; y++) {
+        const yu = ((y + 1) % NY) * NX, yd = ((y - 1 + NY) % NY) * NX, yc = y * NX;
+        for (let x = ga; x <= gb; x++) {
+          const xl = x > 0 ? x - 1 : x + 1, xr = x < NX - 1 ? x + 1 : x - 1;
+          const s = yc + x;
+          const gx = (phi[yc + xr] - phi[yc + xl]) * r2, gy = (phi[yu + x] - phi[yd + x]) * r2;
+          px[s] = gx; py[s] = gy;
+          const g2 = gx * gx + gy * gy;
+          if (g2 < 1e-10) { A[s] = e0; B[s] = 0; continue; }
+          const gi = 1 / Math.sqrt(g2), u = gx * gi, v = gy * gi;
+          let re = u, im = v;
+          for (let k = 1; k < j; k++) { const r0 = re * u - im * v; im = re * v + im * u; re = r0; }
+          const c = re * cj + im * sj, sn = im * cj - re * sj;     // cos, sin of j(theta - theta0)
+          const e = epsBar * (1 + delta * c), ep = -epsBar * j * delta * sn;
+          A[s] = e * e; B[s] = e * ep;
+        }
+      }
+      // phase-field update, only in the band of columns where the interface is (phi is exactly 0 or 1 elsewhere)
+      const xa = Math.max(0, bandLo - 3), xb = Math.min(NX - 1, bandHi + 3);
+      let lo = NX, hi = -1;
+      for (let y = 0; y < NY; y++) {
+        const yu = ((y + 1) % NY) * NX, yd = ((y - 1 + NY) % NY) * NX, yc = y * NX;
+        for (let x = xa; x <= xb; x++) {
+          const xl = x > 0 ? x - 1 : x + 1, xr = x < NX - 1 ? x + 1 : x - 1;
+          const s = yc + x, p = phi[s];
+          // div(eps^2 grad phi) = eps^2 lap(phi) + grad(eps^2).grad(phi), with the isotropic 9-point Laplacian
+          // (the 5-point one makes an under-resolved interface grow fastest along the grid diagonals)
+          const lap9 = (4 * (phi[yc + xr] + phi[yc + xl] + phi[yu + x] + phi[yd + x])
+                       + phi[yu + xr] + phi[yu + xl] + phi[yd + xr] + phi[yd + xl] - 20 * p) / 6 * rdx2;
+          const lapA = A[s] * lap9 + ((A[yc + xr] - A[yc + xl]) * px[s] + (A[yu + x] - A[yd + x]) * py[s]) * r2;
+          const t1 = (B[yu + x] * px[yu + x] - B[yd + x] * px[yd + x]) * r2;
+          const t2 = -(B[yc + xr] * py[yc + xr] - B[yc + xl] * py[yc + xl]) * r2;
+          const pp = p * (1 - p);
+          let reac = 0;
+          if (pp > 1e-6) { const m = alpha / Math.PI * Math.atan(gam * (Teq - T[s])); reac = pp * (p - 0.5 + m + a * (Math.random() - 0.5)); }
+          const dp = dt / tau * (lapA + t1 + t2 + reac);
+          dphi[s] = dp;
+          if (p > 1e-6 && p < 1 - 1e-6 || Math.abs(dp) > 1e-7) { if (x < lo) lo = x; if (x > hi) hi = x; }
+        }
+      }
+      // temperature update (uses the old T for the Laplacian), then phi
+      for (let y = 0; y < NY; y++) {
+        const yu = ((y + 1) % NY) * NX, yd = ((y - 1 + NY) % NY) * NX, yc = y * NX;
+        for (let x = 0; x < NX; x++) {
+          const s = yc + x;
+          const xl = x > 0 ? x - 1 : x + 1;
+          const tl = T[yc + xl], tu = T[yu + x], td = T[yd + x], tul = T[yu + xl], tdl = T[yd + xl];
+          // insulated left wall (mirror), right wall held at T0 (antisymmetric ghost)
+          let tr, tur, tdr;
+          if (x < NX - 1) { tr = T[s + 1]; tur = T[yu + x + 1]; tdr = T[yd + x + 1]; }
+          else { tr = 2 * T0 - T[s]; tur = 2 * T0 - tu; tdr = 2 * T0 - td; }
+          A[s] = (4 * (tl + tr + tu + td) + tul + tur + tdl + tdr - 20 * T[s]) / 6 * rdx2;
+        }
+      }
+      for (let y = 0; y < NY; y++) { const yc = y * NX; for (let x = 0; x < NX; x++) { const s = yc + x; T[s] += dt * A[s]; } }
+      for (let y = 0; y < NY; y++) { const yc = y * NX; for (let x = xa; x <= xb; x++) { const s = yc + x, d = dphi[s]; T[s] += K * d; phi[s] += d; } }
+      if (hi >= 0) { bandLo = lo; bandHi = hi; }
+      sim.time += dt; sim.steps++;
+    }
+  };
+  // rightmost position of the solid (phi > 0.5), averaged over nothing: the leading tip
+  sim.tip = function () {
+    let best = 0;
+    for (let y = 0; y < NY; y++) for (let x = NX - 1; x > best; x--) if (phi[y * NX + x] > 0.5) { best = x; break; }
+    return best;
+  };
+  sim.fraction = function () { let f = 0; for (let s = 0; s < N; s++) f += phi[s]; return f / N; };
+  return sim;
+}
+if (typeof module !== "undefined") module.exports = { createPF };
+
+
+// ---------- page ----------
+const $ = id => document.getElementById(id);
+const SIZES = { S: [300, 200], M: [400, 300], L: [600, 400] };
+const opt = { T0: 0.2, K: 1.6, delta: 0.05, j: 4, th: 0, noise: 0.04, size: "M" };
+let sim, running = true, speedLevel = 3, colorBy = "T", done = "";
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let C = {};
+function readColors() {
+  const cs = getComputedStyle(document.documentElement), g = n => cs.getPropertyValue(n).trim();
+  C = { scene: g("--scene"), fg: g("--fg"), muted: g("--muted"), line: g("--line"), accent: g("--accent"), dark: cs.colorScheme === "dark" };
+}
+readColors();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readColors(); draw(); });
+new MutationObserver(() => { readColors(); draw(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+// temperature colormap: cold blue -> pale -> warm orange-red at the melting point
+const STOPS = [[0, [33, 76, 150]], [0.45, [120, 170, 214]], [0.75, [238, 236, 230]], [0.9, [240, 168, 104]], [1, [204, 74, 52]]];
+const LUT = new Uint8Array(256 * 3);
+for (let k = 0; k < 256; k++) {
+  const u = k / 255; let a = 0; while (a < STOPS.length - 2 && u > STOPS[a + 1][0]) a++;
+  const [u0, c0] = STOPS[a], [u1, c1] = STOPS[a + 1], f = (u - u0) / (u1 - u0);
+  for (let q = 0; q < 3; q++) LUT[3 * k + q] = Math.round(c0[q] + (c1[q] - c0[q]) * f);
+}
+$("tbar").style.background = `linear-gradient(90deg, ${STOPS.map(([u, c]) => `rgb(${c}) ${u * 100}%`).join(",")})`;
+
+function newSim() {
+  const [NX, NY] = SIZES[opt.size];
+  sim = createPF({ NX, NY, T0: opt.T0, K: opt.K, delta: opt.delta, j: opt.j, theta0: opt.th * Math.PI / 180, noise: opt.noise });
+  done = ""; tipHist = [];
+  view.width = NX; view.height = NY; img = vctx.createImageData(NX, NY);
+  $("tlo").textContent = opt.T0.toFixed(2);
+  draw();
+}
+
+// ---------- drawing ----------
+const view = $("view"), vctx = view.getContext("2d");
+let img;
+function draw() {
+  if (!sim) return;
+  const NX = sim.NX, NY = sim.NY, phi = sim.phi, T = sim.T, d = img.data, T0 = sim.T0, span = Math.max(0.05, 1 - T0);
+  const line = C.dark ? [240, 244, 248] : [29, 35, 43];
+  for (let y = 0; y < NY; y++) for (let x = 0; x < NX; x++) {
+    const s = y * NX + x, p = phi[s], q = 4 * ((NY - 1 - y) * NX + x);
+    let r, g, b;
+    if (colorBy === "T") {
+      let u = (T[s] - T0) / span; u = u < 0 ? 0 : u > 1.04 ? 1.04 : u;
+      const k = Math.min(255, Math.round(u / 1.04 * 255)) * 3;
+      r = LUT[k]; g = LUT[k + 1]; b = LUT[k + 2];
+      if (p > 0.5) { r *= 0.8; g *= 0.8; b *= 0.8; }           // the solid a little darker
+    } else {
+      const f = p < 0 ? 0 : p > 1 ? 1 : p;
+      r = 207 + (61 - 207) * f; g = 224 + (74 - 224) * f; b = 242 + (92 - 242) * f;
+    }
+    // interface: a cell on the solid side with a liquid neighbor
+    if (p > 0.5 && ((x < NX - 1 && phi[s + 1] <= 0.5) || (x > 0 && phi[s - 1] <= 0.5) ||
+        phi[((y + 1) % NY) * NX + x] <= 0.5 || phi[((y - 1 + NY) % NY) * NX + x] <= 0.5)) { r = line[0]; g = line[1]; b = line[2]; }
+    d[q] = r; d[q + 1] = g; d[q + 2] = b; d[q + 3] = 255;
+  }
+  vctx.putImageData(img, 0, 0);
+  readout();
+}
+let tipHist = [];
+function readout() {
+  const tip = sim.tip(), X = tip * sim.dx;
+  tipHist.push([sim.time, X]); while (tipHist.length > 2 && sim.time - tipHist[0][0] > 0.1) tipHist.shift();
+  const v = tipHist.length > 1 ? (X - tipHist[0][1]) / Math.max(1e-9, sim.time - tipHist[0][0]) : 0;
+  $("readout").innerHTML =
+    `t = ${sim.time.toFixed(3)}<br>leading tip at x = ${X.toFixed(2)} of ${(sim.NX * sim.dx).toFixed(1)}<br>` +
+    `tip speed ${v.toFixed(2)}<br>undercooling Δ = ${((1 - sim.T0) / sim.K).toFixed(2)}` + (done ? `<br><b>${done}</b>` : "");
+}
+
+// ---------- loop ----------
+const SPEEDS = [2, 6, 15, 40, 100], SPEEDNAME = ["very slow", "slow", "medium", "fast", "very fast"];
+let lastTick = 0;
+function tick() {
+  const now = performance.now();
+  if (running && sim && !done) {
+    try {
+      const want = Math.max(1, Math.round(SPEEDS[speedLevel - 1] * (reduceMotion ? 0.5 : 1))), t0 = performance.now();
+      let n = 0;
+      while (n < want) { sim.step(2); n += 2; if (performance.now() - t0 > 30) break; }
+      if (sim.tip() >= sim.NX - 4) done = "Reached the cold wall: start over";
+    } catch (e) { console.error(e); }
+    try { draw(); } catch (e) { console.error(e); }
+  }
+  lastTick = now;
+}
+function frame() { tick(); requestAnimationFrame(frame); }
+setInterval(() => { if (performance.now() - lastTick > 80) tick(); }, 50);
+
+// ---------- controls ----------
+function bindNum(id, lo, hi, key, live) {
+  const set = v => {
+    v = Math.min(hi, Math.max(lo, +v)); if (!isFinite(v)) return;
+    opt[key] = v; $(id).value = v; if (document.activeElement !== $(id + "Num")) $(id + "Num").value = v;
+    if (live && sim) live(v);
+  };
+  $(id).addEventListener("input", e => { $(id + "Num").value = e.target.value; set(e.target.value); });
+  $(id + "Num").addEventListener("change", e => set(e.target.value));
+}
+bindNum("T0", 0, 0.9, "T0", v => { sim.T0 = v; });        // the cold wall follows at once; the liquid's start value on restart
+bindNum("K", 1, 2.2, "K", v => { sim.K = v; });
+$("delta").addEventListener("input", e => { opt.delta = +e.target.value; $("deltaOut").textContent = opt.delta.toFixed(3).replace(/0$/, ""); if (sim) sim.delta = opt.delta; });
+$("th").addEventListener("input", e => { opt.th = +e.target.value; $("thOut").textContent = opt.th + "°"; if (sim) sim.theta0 = opt.th * Math.PI / 180; });
+$("noise").addEventListener("input", e => { opt.noise = +e.target.value; $("noiseOut").textContent = opt.noise.toFixed(3).replace(/0$/, ""); if (sim) sim.noise = opt.noise; });
+document.querySelectorAll('input[name="j"]').forEach(r => r.addEventListener("change", () => { opt.j = +r.value; if (sim) sim.j = opt.j; }));
+document.querySelectorAll('input[name="size"]').forEach(r => r.addEventListener("change", () => { opt.size = r.value; newSim(); }));
+document.querySelectorAll('input[name="color"]').forEach(r => r.addEventListener("change", () => {
+  colorBy = r.value; $("keyT").hidden = colorBy !== "T"; $("keyP").hidden = colorBy !== "P"; draw();
+}));
+$("speed").addEventListener("input", e => { speedLevel = +e.target.value; $("speedOut").textContent = SPEEDNAME[speedLevel - 1]; });
+$("run").addEventListener("click", () => { running = !running; $("run").textContent = running ? "Pause" : "Run"; });
+$("restart").addEventListener("click", () => newSim());
+
+newSim();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
