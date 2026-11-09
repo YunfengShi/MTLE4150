@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Spiral Growth on a Dislocation</title>
-<meta name="description" content="Kinetic Monte Carlo model of a close-packed crystal facet growing around one or two dislocations: the step winds into a growth spiral. Adjustable supersaturation, temperature and surface diffusion, with top and 3D views. MTLE 4150, Professor Yunfeng Shi, RPI.">
+<meta name="description" content="Kinetic Monte Carlo model of a close-packed crystal facet growing around one or two dislocations: the step winds into a growth spiral. Also 2D nucleation from a disk and in the notches of a substrate, with the critical nucleus shown. Adjustable supersaturation, temperature and surface diffusion, with top and 3D views. MTLE 4150, Professor Yunfeng Shi, RPI.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,600&display=swap">
@@ -146,6 +146,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
       <span class="bar" id="hbar"></span>
       <span class="ticks"><span>layer n</span><span>n + 6</span></span>
       <span id="keyStep"><i style="background:#22262c;border-radius:2px;height:4px;width:14px;outline:1px solid var(--muted)"></i>steps (edge of the upper layer)</span>
+      <span id="keyWall" hidden><i style="background:#8d96a3"></i>substrate (fixed atoms)</span>
+      <span id="keyCrit" hidden><i style="background:transparent;outline:2px dashed var(--fg)"></i>critical nucleus, radius r*</span>
       <span id="keyCore"><i style="background:#ffffff;outline:2px solid #c4471c"></i>dislocation core (line in 3D)</span>
     </div>
     <div class="readout" id="readout"></div>
@@ -164,7 +166,23 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
         <label><input type="radio" name="mode" value="pair+-"><span>Pair, opposite</span></label>
         <label><input type="radio" name="mode" value="pair++"><span>Pair, same sign</span></label>
         <label><input type="radio" name="mode" value="none"><span>None</span></label>
+        <label><input type="radio" name="mode" value="disk"><span>None, plus a disk</span></label>
+        <label><input type="radio" name="mode" value="wedge"><span>None, plus a notched substrate</span></label>
       </fieldset>
+      <fieldset class="seg" id="diskField" hidden>
+        <legend>Disk: a one-layer island in the middle of a flat facet. Radius (atoms)</legend>
+        <label><input type="radio" name="disk" value="4"><span>4</span></label>
+        <label><input type="radio" name="disk" value="8"><span>8</span></label>
+        <label><input type="radio" name="disk" value="15" checked><span>15</span></label>
+        <label><input type="radio" name="disk" value="30"><span>30</span></label>
+      </fieldset>
+      <fieldset class="seg" id="wbField" hidden>
+        <legend>Substrate–crystal bond, and the contact angle θ it gives</legend>
+        <label><input type="radio" name="wb" value="0"><span>0 (θ = 180°)</span></label>
+        <label><input type="radio" name="wb" value="0.5" checked><span>φ/2 (θ ≈ 90°)</span></label>
+        <label><input type="radio" name="wb" value="1"><span>φ (θ = 0°, wets)</span></label>
+      </fieldset>
+      <p class="note" id="wedgeNote" hidden>The gray substrate fills the right part of the facet; its face has a deep and a shallow V-shaped notch. Young–Dupré with bond counting: cos θ = 2w/φ − 1 for a substrate bond w, so w = φ/2 gives θ ≈ 90°. The new layer nucleates in the notch tips. It escapes a notch easily only if the notch mouth is wider than the critical diameter 2r*; from a narrower notch it stays trapped (until a rare fluctuation frees it). Nucleation in the notch tips takes about a minute at Δμ/k<sub>B</sub>T = 0.5, and much longer at 0.4.</p>
       <div class="field" id="sepField" hidden>
         <label for="sep"><span>Distance between the pair (atoms)</span> <output id="sepOut">40</output></label>
         <input type="range" id="sep" min="2" max="80" step="1" value="40">
@@ -214,6 +232,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
       </div>
       <label class="check"><input type="checkbox" id="steps" checked> Draw the steps</label>
       <label class="check"><input type="checkbox" id="cores" checked> Mark the dislocation cores</label>
+      <label class="check"><input type="checkbox" id="crit"> Show the critical nucleus</label>
+      <p class="note" style="margin:0">The dashed circle is the critical 2D nucleus at the current temperature and Δμ: islands smaller than it tend to dissolve, larger ones tend to grow. r* = γa<sub>s</sub>/Δμ, with a<sub>s</sub> = (√3/2)a² the area per atom and γ the step free energy per atom spacing: φ for the broken bonds, lowered by the entropy of thermal kinks, γ = φ − k<sub>B</sub>T ln[(1+e<sup>−φ/2k<sub>B</sub>T</sup>)/(1−e<sup>−φ/2k<sub>B</sub>T</sup>)]. γ falls to zero near k<sub>B</sub>T/φ ≈ 0.82, the roughening point.</p>
       <div class="field">
         <label for="speed">Speed <output id="speedOut">medium</output></label>
         <input type="range" id="speed" min="1" max="5" step="1" value="3">
@@ -228,6 +248,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
       <li>The step starts straight, running from the core to the right edge. The rest of the facet is a gentle ramp (the color shifts smoothly around the core), because the screw displacement lifts the lattice by one layer per turn.</li>
       <li>Atoms attach all along the step, so every part of it advances at about the same speed. Close to the core that means a faster turn, and the step winds up.</li>
       <li>It settles into a spiral whose turns are evenly spaced and rotate steadily. Each turn adds one layer. The spacing is set by the smallest island that can survive at that Δμ: raise Δμ and the spiral tightens.</li>
+      <li>Without a dislocation (None, plus a disk), a flat facet can only grow by nucleating islands. A starting disk bigger than the dashed critical circle spreads to cover the facet, then growth stops: the new layer is complete and nothing nucleates. A disk smaller than r* dissolves. Change Δμ or the temperature and watch r* move past the disk.</li>
+      <li>The notched substrate (None, plus a notched substrate) is nucleation in a crevice, in 2D. With a contact angle near 90°, a nucleus in the sharp tip of a notch is curved enough to be stable while still tiny, so the new layer starts there and fills the notch. At the mouth it bulges out as a half-circle the width of the mouth. If the mouth is wider than 2r* (the dashed circle), the layer escapes and spreads over the facet; if narrower, it stays trapped in the notch. On the open terrace or along the flat face nothing nucleates.</li>
       <li>A pair of opposite sign makes closed loops that spread out, as long as the two cores are farther apart than that critical island size; bring them closer and the source shuts off. A pair of the same sign makes two interleaved spirals.</li>
     </ol>
     <p>Model: solid-on-solid crystal on a triangular lattice (each column of atoms has six neighbors), rejection-free kinetic Monte Carlo. Adsorption rate ν e<sup>Δμ/k<sub>B</sub>T − 3φ/k<sub>B</sub>T</sup> per site, so Δμ = 0 balances evaporation from a kink site, which has three of its six neighbors. Time is in units of 1/ν.</p>
@@ -287,28 +309,54 @@ function createKMC(opt) {
   // bond count of the top atom of column s (level hgt[s]). Mirror boundary: a missing neighbour is replaced by the
   // column on the opposite side, so the edge of the simulated patch neither attracts nor repels atoms.
   const OPP = [1, 0, 5, 4, 3, 2];
+  // bond energy in half-bond units: 2 per ordinary neighbor, WB (0..2) per wall neighbor
+  const WB = Math.round(2 * (opt.wallBond != null ? opt.wallBond : 0.5));
   function bonds(s) {
     const L = hgt[s]; let n = 0;
     for (let k = 0; k < 6; k++) {
       let t = nb[6 * s + k], o = off[6 * s + k];
-      if (t < 0) { const k2 = OPP[k]; t = nb[6 * s + k2]; o = off[6 * s + k2]; if (t < 0) { n++; continue; } }
-      if (hgt[t] + o >= L) n++;
+      if (t < 0) { const k2 = OPP[k]; t = nb[6 * s + k2]; o = off[6 * s + k2]; if (t < 0) { n += 2; continue; } }
+      if (hgt[t] + o >= L) n += (L === 1 && wall[t]) ? WB : 2;     // a fixed wall atom binds more weakly
+
     }
     return n;
   }
+  // the patch's center (where a single dislocation core or the starting disk sits)
+  sim.cx = W / 2 + 0.25; sim.cy = yc;
+  // "wedge": a flat facet next to a substrate of fixed atoms, one layer high, filling the right part of the patch.
+  // Its face has two V-shaped notches (a deep one and a shallow one). The substrate atoms never leave, so all the
+  // growth happens in the one layer on the flat facet.
+  const wall = new Uint8Array(N); sim.wall = wall;
+  if (mode === "wedge") {
+    const Ly = H * S3, faceX = 0.58 * W, ta = Math.tan(20 * Math.PI / 180);
+    const notches = [{ y: 0.38 * Ly, depth: 0.2 * W }, { y: 0.78 * Ly, depth: 0.04 * W }];
+    sim.notches = notches.map(n => ({ y: n.y, depth: n.depth, mouth: 2 * n.depth * ta, faceX }));
+    sim.critAt = { x: 0.27 * W, y: 0.5 * Ly };
+    for (let s = 0; s < N; s++) {
+      if (px[s] < faceX) continue;
+      let inside = false;
+      for (const n of notches) { const d = faceX + n.depth - px[s]; if (d >= 0 && Math.abs(py[s] - n.y) < d * ta) inside = true; }
+      if (!inside) { hgt[s] = 1; wall[s] = 1; }
+    }
+  }
+  // "disk": a flat facet with a one-layer-high island of radius diskR in the middle
+  if (mode === "disk") {
+    const R0 = opt.diskR || 15;
+    for (let s = 0; s < N; s++) if (Math.hypot(px[s] - sim.cx, py[s] - sim.cy) <= R0) hgt[s] = 1;
+  }
   // lists by bond count
-  const cnt = new Int32Array(7), list = Array.from({ length: 7 }, () => new Int32Array(N)), pos = new Int32Array(N), cls = new Int8Array(N);
+  const cnt = new Int32Array(13), list = Array.from({ length: 13 }, () => new Int32Array(N)), pos = new Int32Array(N), cls = new Int8Array(N);
   function put(s, n) { cls[s] = n; pos[s] = cnt[n]; list[n][cnt[n]++] = s; }
   function take(s) { const n = cls[s], p = pos[s], last = list[n][--cnt[n]]; list[n][p] = last; pos[last] = p; }
   function refresh(s) { const n = bonds(s); if (n !== cls[s]) { take(s); put(s, n); } }
   function refreshAround(s) { refresh(s); for (let k = 0; k < 6; k++) { const t = nb[6 * s + k]; if (t >= 0) refresh(t); } }
   for (let s = 0; s < N; s++) put(s, bonds(s));
 
-  let rate = new Float64Array(7), kPlus = 0;
+  let rate = new Float64Array(13), kPlus = 0;
   function rates() {
     const K = 1 / sim.kT;
     kPlus = Math.exp(sim.dmu - 3 * K);
-    for (let n = 0; n < 7; n++) rate[n] = (1 + sim.D) * Math.exp(-n * K);  // desorb + hop, per column with n bonds
+    for (let n = 0; n < 13; n++) rate[n] = (1 + sim.D) * Math.exp(-n / 2 * K);  // desorb + hop, per column with n/2 bonds
   }
   sim.rates = rates;
   rates();
@@ -317,16 +365,17 @@ function createKMC(opt) {
     rates();
     const Dfrac = sim.D / (1 + sim.D);
     for (let e = 0; e < nEvents; e++) {
-      let tot = N * kPlus; for (let n = 0; n < 7; n++) tot += cnt[n] * rate[n];
+      let tot = N * kPlus; for (let n = 0; n < 13; n++) tot += cnt[n] * rate[n];
       sim.time += -Math.log(1 - Math.random()) / tot;
       let u = Math.random() * tot;
       if (u < N * kPlus) {                                   // adsorption
         const s = (Math.random() * N) | 0; hgt[s]++; sim.deposited++; refreshAround(s); continue;
       }
       u -= N * kPlus;
-      let n = 0; for (; n < 6; n++) { const r = cnt[n] * rate[n]; if (u < r) break; u -= r; }
+      let n = 0; for (; n < 12; n++) { const r = cnt[n] * rate[n]; if (u < r) break; u -= r; }
       if (cnt[n] === 0) continue;
       const s = list[n][(Math.random() * cnt[n]) | 0];
+      if (wall[s] && hgt[s] <= 1) continue;                    // wall atoms stay put
       if (Math.random() >= Dfrac) { hgt[s]--; sim.deposited--; refreshAround(s); continue; }   // desorption
       // hop to a random neighbour column (lands on top of it); an edge column cannot hop out
       const t = nb[6 * s + ((Math.random() * 6) | 0)];
@@ -339,9 +388,9 @@ function createKMC(opt) {
   sim.z = s => hgt[s] + ramp[s];
   sim.mean = function () { let m = 0; for (let s = 0; s < N; s++) m += hgt[s]; return m / N; };
   // a column is on a step edge if a neighbour is lower; lone adatoms and dimers (fewer than 2 bonds) don't count
-  sim.bondsOf = s => cls[s];
+  sim.bondsOf = s => cls[s] / 2;
   sim.isEdge = function (s) {
-    const L = hgt[s]; if (cls[s] < 2) return false;
+    const L = hgt[s]; if (cls[s] < 4) return false;
     for (let k = 0; k < 6; k++) { const t = nb[6 * s + k]; if (t >= 0 && hgt[t] + off[6 * s + k] < L) return true; }
     return false;
   };
@@ -353,11 +402,23 @@ if (typeof module !== "undefined") module.exports = { createKMC };
 // ---------- page ----------
 const $ = id => document.getElementById(id);
 const DVALS = [0, 1, 3, 10, 20, 50, 100];
-const opt = { mode: "single", W: 180, kT: 0.3, dmu: 0.4, D: 20, sep: 40 };
+const opt = { mode: "single", W: 180, kT: 0.3, dmu: 0.4, D: 20, sep: 40, diskR: 15, wedge: 40, wb: 0.5 };
+let showCrit = false;
+// classical 2D nucleation: r* = gamma a_s / dmu, N* = pi r*^2 / a_s, dG* = pi a_s gamma^2 / dmu  (a = 1, a_s = sqrt3/2)
+// step free energy per atom spacing: broken bonds (phi) minus the entropy of thermal kinks (kink energy phi/2)
+function stepEnergy(kT) { const x = Math.exp(-0.5 / kT); return 1 - kT * Math.log((1 + x) / (1 - x)); }
+function critical() {
+  const dmu = opt.dmu * opt.kT, g0 = stepEnergy(opt.kT);       // in units of phi
+  if (!(dmu > 1e-6)) return { none: "dmu" };
+  if (!(g0 > 0.01)) return { none: "rough" };
+  const as = Math.sqrt(3) / 2, r = g0 * as / dmu, n = Math.PI * r * r / as, g = Math.PI * as * g0 * g0 / dmu / opt.kT;
+  return { r, n, g, gamma: g0 };
+}
 let sim, running = true, speedLevel = 3, showSteps = true, showCores = true, vmode = "top", exag = 5;
 const cam = { az: -Math.PI / 2 + 0.35, el: 0.62, zoom: 1 };
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const PALHEX = ["#d4524e", "#e9a23b", "#79a85a", "#2a9d8f", "#3a72b0", "#8a63a8"];
+const WALLC = [141, 150, 163];
 const PAL = PALHEX.map(h => [1, 3, 5].map(k => parseInt(h.slice(k, k + 2), 16)));
 $("hbar").style.background = `linear-gradient(90deg, ${[...PALHEX, PALHEX[0]].join(",")})`;
 let C = {};
@@ -374,11 +435,11 @@ new MutationObserver(redrawAll).observe(document.documentElement, { attributes: 
 const RUNCOL = ["#c4471c", "#2a6fb5", "#2f8f5b", "#8a4fb0", "#b08a1c", "#5a6574"];
 let runs = [], run = null;
 function label() {
-  const m = { single: "one dislocation", "pair+-": `pair −/+, ${opt.sep} apart`, "pair++": `pair +/+, ${opt.sep} apart`, none: "no dislocation" }[opt.mode];
+  const m = { single: "one dislocation", "pair+-": `pair −/+, ${opt.sep} apart`, "pair++": `pair +/+, ${opt.sep} apart`, none: "no dislocation", disk: `flat facet + disk of radius ${opt.diskR}`, wedge: `notched substrate, bond ${opt.wb}φ` }[opt.mode];
   return `${m}, Δμ/kT ${opt.dmu.toFixed(2)}, kT/φ ${opt.kT.toFixed(2)}, D ${opt.D}`;
 }
 function newSim() {
-  sim = createKMC({ W: opt.W, mode: opt.mode, sep: opt.sep, kT: opt.kT, dmu: opt.dmu, D: opt.D });
+  sim = createKMC({ W: opt.W, mode: opt.mode, sep: opt.sep, diskR: opt.diskR, wedge: opt.wedge, wallBond: opt.wb, kT: opt.kT, dmu: opt.dmu, D: opt.D });
   run = { label: label(), col: RUNCOL[runs.length % RUNCOL.length], pts: [[0, 0]] };
   runs.push(run); if (runs.length > 6) runs.shift();
   rateHist = [[0, 0]];
@@ -414,7 +475,8 @@ function draw2D() {
     const s = j * W + i, z = h[s] + ramp[s];
     const u = ((z % 6) + 6) % 6, k = Math.floor(u), f = u - k, a = PAL[k], b = PAL[(k + 1) % 6];
     let r = a[0] + (b[0] - a[0]) * f, g = a[1] + (b[1] - a[1]) * f, bl = a[2] + (b[2] - a[2]) * f;
-    if (showSteps) {
+    if (sim.wall[s] && h[s] === 1) { r = WALLC[0]; g = WALLC[1]; bl = WALLC[2]; }
+    else if (showSteps) {
       let lower = false; const L = h[s];
       if (sim.bondsOf(s) >= 2)   // lone adatoms and dimers are not steps
       for (let n = 0; n < 6; n++) { const t = nb[6 * s + n]; if (t >= 0 && h[t] + offs[6 * s + n] < L) { lower = true; break; } }
@@ -439,7 +501,25 @@ function draw2D() {
     ctx.beginPath(); ctx.arc(X, Y, Math.max(4, 1.6 * sx), 0, 2 * Math.PI);
     ctx.fillStyle = "#ffffff"; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = C.accent; ctx.stroke();
   }
+  const cr = critical();
+  if (showCrit && cr.r && cr.r < 0.48 * W) {
+    const at = sim.critAt || { x: sim.cx, y: sim.cy }, rowh = sx * Math.sqrt(3) / 2, X = ox + (at.x + 0.5) * sx, Y = oy + dh - at.y * sx - 0.5 * rowh;
+    critCircle(ctx, X, Y, cr.r * sx, cr.r * sx, 1);
+  }
   readout();
+}
+// the critical nucleus: dashed circle (an ellipse in the 3D view) with a label
+function critCircle(ctx, X, Y, rx, ry, k) {
+  const cr = critical();
+  ctx.save();
+  ctx.lineWidth = 4 * k; ctx.strokeStyle = "rgba(255,255,255,0.85)"; ctx.beginPath(); ctx.ellipse(X, Y, Math.max(1, rx), Math.max(1, ry), 0, 0, 2 * Math.PI); ctx.stroke();
+  ctx.lineWidth = 2 * k; ctx.strokeStyle = C.dark ? "#e5eaf0" : "#18212c"; ctx.setLineDash([6 * k, 4 * k]); ctx.stroke(); ctx.setLineDash([]);
+  const txt = `r* = ${cr.r.toFixed(1)} a`;
+  ctx.font = `600 ${12 * k}px IBM Plex Mono, monospace`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  const tx = X + rx * 0.72 + 6 * k, ty = Y - ry * 0.72 - 6 * k, tw = ctx.measureText(txt).width;
+  ctx.fillStyle = C.dark ? "rgba(18,24,33,0.85)" : "rgba(255,255,255,0.88)"; ctx.fillRect(tx - 4 * k, ty - 9 * k, tw + 8 * k, 18 * k);
+  ctx.fillStyle = C.dark ? "#e5eaf0" : "#18212c"; ctx.fillText(txt, tx, ty);
+  ctx.restore();
 }
 
 // ---------- 3D: z-buffered splats, one per column, plus the risers of steps and the sides of the crystal ----------
@@ -491,7 +571,8 @@ function draw3D() {
     // least-squares slope on the hexagon (sum of dx^2 over 6 neighbors = 3)
     const nx = -gx / 3 * ez, ny = -gy / 3 * ez, nl = Math.hypot(nx, ny, 1);
     const lam = Math.max(0, (nx * L[0] + ny * L[1] + L[2]) / nl), shade = 0.5 + 0.55 * lam;
-    if (showSteps && isStep && sim.bondsOf(s) >= 2) { r = edgeC[0]; g = edgeC[1]; bl = edgeC[2]; }
+    if (sim.wall[s] && h[s] === 1) { r = WALLC[0]; g = WALLC[1]; bl = WALLC[2]; }
+    else if (showSteps && isStep && sim.bondsOf(s) >= 2) { r = edgeC[0]; g = edgeC[1]; bl = edgeC[2]; }
     const R1 = Math.min(255, r * shade) | 0, G1 = Math.min(255, g * shade) | 0, B1 = Math.min(255, bl * shade) | 0;
     const top = (255 << 24) | (B1 << 16) | (G1 << 8) | R1;
     const x0 = Math.max(0, Math.round(sxp - half)), x1 = Math.min(Wp, Math.round(sxp + half));
@@ -522,6 +603,16 @@ function draw3D() {
       }
     }
   }
+  const cr = critical();
+  if (showCrit && cr.r && cr.r < 0.48 * W) {
+    // a circle lying on the facet at the center column's height, seen in perspective as an ellipse
+    const at = sim.critAt || { x: sim.cx, y: sim.cy };
+    let best = 0, bd = 1e9; for (let s = 0; s < N; s++) { const dd = Math.hypot(px[s] - at.x, py[s] - at.y); if (dd < bd) { bd = dd; best = s; } }
+    const Zc = (h[best] + ramp[best] - zc + 0.6) * ez, X = at.x - Xc, Y = at.y - Yc;
+    const cxp = ox + S * (X * rt[0] + Y * rt[1]), cyp = oy - S * (X * up[0] + Y * up[1] + Zc * up[2]);
+    // a horizontal circle projects to an ellipse with axes r (across) and r*sin(el) (in depth)
+    critCircle(ctx, cxp, cyp, cr.r * S, cr.r * S * se, dpr);
+  }
   readout();
 }
 // drag to rotate, wheel or pinch to zoom (3D view only)
@@ -545,7 +636,8 @@ function readout() {
   $("readout").innerHTML =
     `t = ${fmtT(sim.time)} / ν<br>grown ${m.toFixed(2)} layers<br>` +
     `growth rate ${(growthRate * 1000).toPrecision(3)} layers per 1000/ν<br>` +
-    `Δμ/k<sub>B</sub>T ${sim.dmu.toFixed(2)} · k<sub>B</sub>T/φ ${sim.kT.toFixed(2)}`;
+    `Δμ/k<sub>B</sub>T ${sim.dmu.toFixed(2)} · k<sub>B</sub>T/φ ${sim.kT.toFixed(2)}<br>` +
+    (() => { const c = critical(); return c.r ? `critical nucleus r* = ${c.r.toFixed(1)} a, ${Math.round(c.n)} atoms<br>barrier ΔG* = ${c.g.toFixed(1)} k<sub>B</sub>T` : c.none === "dmu" ? "Δμ ≤ 0: every island shrinks" : "above roughening: no nucleation barrier"; })();
 }
 function fmtT(t) { return Math.round(t).toLocaleString("en-US"); }
 
@@ -574,7 +666,7 @@ setInterval(() => { if (performance.now() - lastTick > 80) tick(); }, 50);
 
 // ---------- controls ----------
 document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener("change", () => {
-  opt.mode = r.value; $("sepField").hidden = !opt.mode.startsWith("pair"); newSim();
+  opt.mode = r.value; $("sepField").hidden = !opt.mode.startsWith("pair"); $("diskField").hidden = opt.mode !== "disk"; $("wbField").hidden = $("wedgeNote").hidden = opt.mode !== "wedge"; $("keyWall").hidden = opt.mode !== "wedge"; newSim(); $("keyCore").hidden = !showCores || !sim.dis.length;
 }));
 document.querySelectorAll('input[name="size"]').forEach(r => r.addEventListener("change", () => {
   opt.W = +r.value; $("sep").max = Math.round(opt.W * 0.6); if (opt.sep > +$("sep").max) { opt.sep = +$("sep").max; $("sep").value = opt.sep; $("sepOut").textContent = opt.sep; } newSim();
@@ -600,7 +692,10 @@ document.querySelectorAll('input[name="vmode"]').forEach(r => r.addEventListener
 }));
 $("ex").addEventListener("input", e => { exag = +e.target.value; $("exOut").textContent = exag + "×"; draw(); });
 $("steps").addEventListener("change", e => { showSteps = e.target.checked; $("keyStep").hidden = !showSteps; draw(); });
-$("cores").addEventListener("change", e => { showCores = e.target.checked; $("keyCore").hidden = !showCores; draw(); });
+document.querySelectorAll('input[name="wb"]').forEach(r => r.addEventListener("change", () => { opt.wb = +r.value; newSim(); }));
+document.querySelectorAll('input[name="disk"]').forEach(r => r.addEventListener("change", () => { opt.diskR = +r.value; newSim(); }));
+$("crit").addEventListener("change", e => { showCrit = e.target.checked; $("keyCrit").hidden = !showCrit; draw(); });
+$("cores").addEventListener("change", e => { showCores = e.target.checked; $("keyCore").hidden = !showCores || !sim.dis.length; draw(); });
 $("speed").addEventListener("input", e => { speedLevel = +e.target.value; $("speedOut").textContent = SPEEDNAME[speedLevel - 1]; });
 $("run").addEventListener("click", () => { running = !running; $("run").textContent = running ? "Pause" : "Run"; });
 $("restart").addEventListener("click", () => newSim());
