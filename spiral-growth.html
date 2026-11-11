@@ -182,7 +182,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
         <label><input type="radio" name="wb" value="0.5" checked><span>φ/2 (θ ≈ 90°)</span></label>
         <label><input type="radio" name="wb" value="1"><span>φ (θ = 0°, wets)</span></label>
       </fieldset>
-      <p class="note" id="wedgeNote" hidden>The gray substrate fills the right part of the facet; its face has a deep and a shallow V-shaped notch. Young–Dupré with bond counting: cos θ = 2w/φ − 1 for a substrate bond w, so w = φ/2 gives θ ≈ 90°. The new layer nucleates in the notch tips. It escapes a notch easily only if the notch mouth is wider than the critical diameter 2r*; from a narrower notch it stays trapped (until a rare fluctuation frees it). Nucleation in the notch tips takes about a minute at Δμ/k<sub>B</sub>T = 0.5, and much longer at 0.4.</p>
+      <p class="note" id="wedgeNote" hidden>The gray substrate fills the right part of the facet; its face has a wide and a narrow V-shaped notch, each starting half filled with crystal. Young–Dupré with bond counting: cos θ = 2w/φ − 1 for a substrate bond w, so w = φ/2 gives θ ≈ 90°. With θ ≈ 90° the crystal leaves a notch as a half-circle as wide as the mouth, so it escapes only if the mouth is wider than the critical diameter 2r*. Choosing this option sets Δμ so that 2r* is a little wider than the narrow mouth and well under the wide one (turn on the critical nucleus to compare): the crystal in both notches grows out to the mouth, the wide notch releases it over the facet, the narrow one keeps it trapped.</p>
       <div class="field" id="sepField" hidden>
         <label for="sep"><span>Distance between the pair (atoms)</span> <output id="sepOut">40</output></label>
         <input type="range" id="sep" min="2" max="80" step="1" value="40">
@@ -324,19 +324,23 @@ function createKMC(opt) {
   // the patch's center (where a single dislocation core or the starting disk sits)
   sim.cx = W / 2 + 0.25; sim.cy = yc;
   // "wedge": a flat facet next to a substrate of fixed atoms, one layer high, filling the right part of the patch.
-  // Its face has two V-shaped notches (a deep one and a shallow one). The substrate atoms never leave, so all the
+  // Its face has two V-shaped notches (a deep, wide one and a shallower, narrower one), each half filled with
+  // crystal (the inner half, toward the tip) to start with. The substrate atoms never leave, so all the
   // growth happens in the one layer on the flat facet.
   const wall = new Uint8Array(N); sim.wall = wall;
   if (mode === "wedge") {
-    const Ly = H * S3, faceX = 0.58 * W, ta = Math.tan(20 * Math.PI / 180);
-    const notches = [{ y: 0.38 * Ly, depth: 0.2 * W }, { y: 0.78 * Ly, depth: 0.04 * W }];
+    const Ly = H * S3, faceX = 0.58 * W, ta = Math.tan(18 * Math.PI / 180);
+    const notches = [{ y: 0.36 * Ly, depth: 0.28 * W }, { y: 0.8 * Ly, depth: 0.12 * W }];
     sim.notches = notches.map(n => ({ y: n.y, depth: n.depth, mouth: 2 * n.depth * ta, faceX }));
     sim.critAt = { x: 0.27 * W, y: 0.5 * Ly };
     for (let s = 0; s < N; s++) {
       if (px[s] < faceX) continue;
-      let inside = false;
-      for (const n of notches) { const d = faceX + n.depth - px[s]; if (d >= 0 && Math.abs(py[s] - n.y) < d * ta) inside = true; }
-      if (!inside) { hgt[s] = 1; wall[s] = 1; }
+      let inside = false, filled = false;
+      for (const n of notches) {
+        const d = faceX + n.depth - px[s];                    // distance from the notch tip
+        if (d >= 0 && Math.abs(py[s] - n.y) < d * ta) { inside = true; if (d < 0.5 * n.depth) filled = true; }
+      }
+      if (!inside) { hgt[s] = 1; wall[s] = 1; } else if (filled) hgt[s] = 1;
     }
   }
   // "disk": a flat facet with a one-layer-high island of radius diskR in the middle
@@ -406,6 +410,17 @@ const opt = { mode: "single", W: 180, kT: 0.3, dmu: 0.4, D: 20, sep: 40, diskR: 
 let showCrit = false;
 // classical 2D nucleation: r* = gamma a_s / dmu, N* = pi r*^2 / a_s, dG* = pi a_s gamma^2 / dmu  (a = 1, a_s = sqrt3/2)
 // step free energy per atom spacing: broken bonds (phi) minus the entropy of thermal kinks (kink energy phi/2)
+// Choose dmu/kT for the notches. With a 90 deg contact angle the crystal front in a V notch is an arc centered on the
+// tip, of radius = distance from the tip; it grows while that radius exceeds r*. At the mouth it must become a
+// half-circle of radius = the mouth half-width. So we need r* < (narrow notch's half-filled front radius) for its
+// crystal to fill out to the mouth, and r* > (narrow mouth half-width) for it to stay trapped there; the wide
+// notch then releases its crystal (its mouth half-width is larger still). Take the geometric middle of that window (notch half-angle 18 deg).
+function presetNotchDmu() {
+  const a = 18 * Math.PI / 180, small = 0.12 * opt.W * Math.tan(a), arc = 0.06 * opt.W / Math.cos(a);
+  const rt = Math.sqrt(small * arc);
+  const v = Math.round(stepEnergy(opt.kT) * Math.sqrt(3) / 2 / (rt * opt.kT) * 100) / 100;
+  opt.dmu = v; $("dmu").value = v; $("dmuNum").value = v;
+}
 function stepEnergy(kT) { const x = Math.exp(-0.5 / kT); return 1 - kT * Math.log((1 + x) / (1 - x)); }
 function critical() {
   const dmu = opt.dmu * opt.kT, g0 = stepEnergy(opt.kT);       // in units of phi
@@ -666,10 +681,10 @@ setInterval(() => { if (performance.now() - lastTick > 80) tick(); }, 50);
 
 // ---------- controls ----------
 document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener("change", () => {
-  opt.mode = r.value; $("sepField").hidden = !opt.mode.startsWith("pair"); $("diskField").hidden = opt.mode !== "disk"; $("wbField").hidden = $("wedgeNote").hidden = opt.mode !== "wedge"; $("keyWall").hidden = opt.mode !== "wedge"; newSim(); $("keyCore").hidden = !showCores || !sim.dis.length;
+  opt.mode = r.value; $("sepField").hidden = !opt.mode.startsWith("pair"); $("diskField").hidden = opt.mode !== "disk"; $("wbField").hidden = $("wedgeNote").hidden = opt.mode !== "wedge"; $("keyWall").hidden = opt.mode !== "wedge"; if (opt.mode === "wedge") presetNotchDmu(); newSim(); $("keyCore").hidden = !showCores || !sim.dis.length;
 }));
 document.querySelectorAll('input[name="size"]').forEach(r => r.addEventListener("change", () => {
-  opt.W = +r.value; $("sep").max = Math.round(opt.W * 0.6); if (opt.sep > +$("sep").max) { opt.sep = +$("sep").max; $("sep").value = opt.sep; $("sepOut").textContent = opt.sep; } newSim();
+  opt.W = +r.value; if (opt.mode === "wedge") presetNotchDmu(); $("sep").max = Math.round(opt.W * 0.6); if (opt.sep > +$("sep").max) { opt.sep = +$("sep").max; $("sep").value = opt.sep; $("sepOut").textContent = opt.sep; } newSim();
 }));
 $("sep").addEventListener("input", e => { $("sepOut").textContent = e.target.value; });
 $("sep").addEventListener("change", e => { opt.sep = +e.target.value; newSim(); });
