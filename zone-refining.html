@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zone Refining</title>
+<meta name="description" content="Zone refining (Pfann purification) of an ingot: molten zones sweep impurities to one end. Impurity profile after each pass, compared with Pfann's one-pass formula, the ultimate distribution and normal freezing. MTLE 4150, Professor Yunfeng Shi, RPI.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,600&display=swap">
+<style>
+/* Layout: the simulation box fills the bench; the controls follow the order of an experiment (sample, temperature, how to look, what to measure) */
+:root {
+  --bg: #eef1f4;
+  --panel: #fbfcfd;
+  --fg: #18212c;
+  --muted: #5a6574;
+  --line: #d5dbe3;
+  --accent: #c4471c;
+  --scene: #ffffff;
+  --cn6: #c8d0db;          /* bulk: six neighbors */
+  --cn5: #2166c4;          /* five neighbors */
+  --cn7: #d63027;          /* seven neighbors */
+  --cn4: #e39a12;          /* four or fewer */
+  --cn8: #7b3fb5;          /* eight or more */
+  --solute: #1c2129;       /* second species */
+  --plain: #7f8da0;
+  --plot: #c4471c;
+  --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f141b; --panel: #161d26; --fg: #e5eaf0; --muted: #96a2b2; --line: #29323e;
+    --accent: #ff7a4a; --scene: #121821; --cn6: #364253; --cn5: #5aa0ff; --cn7: #ff5c50; --cn4: #ffc23d; --cn8: #c08cff; --solute: #f2f4f7;
+    --plain: #8a99ad; --plot: #ff7a4a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f141b; --panel: #161d26; --fg: #e5eaf0; --muted: #96a2b2; --line: #29323e;
+  --accent: #ff7a4a; --scene: #121821; --cn6: #364253; --cn5: #5aa0ff; --cn7: #ff5c50; --cn4: #ffc23d; --cn8: #c08cff; --solute: #f2f4f7;
+  --plain: #8a99ad; --plot: #ff7a4a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+.code { font: 500 13px var(--font-mono); letter-spacing: .08em; color: var(--accent); }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 28px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 14px; }
+h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(26px, 3.4vw, 34px); line-height: 1.1; margin: 0; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); max-width: 80ch; }
+.stage { position: relative; background: var(--scene); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  height: min(66vh, 640px); min-height: 340px; }
+.stage canvas { display: block; width: 100%; height: 100%; }
+.key { position: absolute; left: 12px; top: 12px; display: grid; gap: 4px; font-size: 13px;
+  background: color-mix(in srgb, var(--scene) 85%, transparent); padding: 8px 10px; border-radius: 8px; }
+.key span { display: flex; align-items: center; gap: 8px; }
+.key i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; }
+.key .wheel { width: 120px; height: 10px; border-radius: 5px;
+  background: linear-gradient(90deg, hsl(0 65% 55%), hsl(60 65% 55%), hsl(120 65% 55%), hsl(180 65% 55%), hsl(240 65% 55%), hsl(300 65% 55%), hsl(360 65% 55%)); }
+.key .ticks { display: flex; justify-content: space-between; width: 120px; font: 11px var(--font-mono); color: var(--muted); }
+.readout { position: absolute; right: 12px; top: 12px; font: 12.5px/1.55 var(--font-mono); text-align: right;
+  background: color-mix(in srgb, var(--scene) 85%, transparent); padding: 8px 10px; border-radius: 8px; font-variant-numeric: tabular-nums; }
+.runbar { position: absolute; left: 12px; bottom: 12px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 980px) { .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) {
+  .steps { grid-template-columns: minmax(0, 1fr); }
+  /* phone: legend and readout stack above the box instead of covering it */
+  .stage { height: auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; padding: 10px; }
+  .stage canvas { grid-column: 1 / -1; grid-row: 2; aspect-ratio: 1; height: auto; }
+  .key, .readout, .runbar { position: static; padding: 0; background: none; }
+  .key { font-size: 12px; }
+  .readout { font-size: 11px; }
+  .runbar { grid-column: 1 / -1; grid-row: 3; }
+}
+.step { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.step h2 { margin: 0; font: 600 13.5px/1.2 var(--font-body); display: flex; gap: 8px; align-items: center; }
+.step h2 b { font: 600 12px/1 var(--font-mono); width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center;
+  background: var(--fg); color: var(--panel); flex: none; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; border: 0; margin: 0; padding: 0; min-width: 0; }
+.seg legend { font-size: 12.5px; color: var(--muted); padding: 0; margin-bottom: 4px; width: 100%; }
+.seg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.seg span { display: inline-block; font: 500 13px/1 var(--font-body); padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; background: var(--panel); }
+.seg input:checked + span { background: var(--fg); color: var(--panel); border-color: var(--fg); }
+.seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field label { font-size: 13px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.field input[type="number"] { width: 5.4em; font: 13px var(--font-mono); padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--scene); color: var(--fg); text-align: right; }
+.field output, .note { font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.note { margin: 0; line-height: 1.5; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.check input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; flex: none; }
+.btn { font: 600 13px/1 var(--font-body); padding: 9px 13px; border-radius: 8px; cursor: pointer; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
+.btn.primary { background: var(--fg); color: var(--panel); border-color: var(--fg); }
+.btn.small { padding: 6px 10px; font-weight: 500; }
+.btn:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.chart { width: 100%; height: 170px; display: block; }
+.step.wide { grid-column: 1 / -1; }
+.chartRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px); gap: 14px; align-items: start; }
+@media (max-width: 700px) { .chartRow { grid-template-columns: minmax(0, 1fr); } }
+.fit { font: 12.5px/1.5 var(--font-mono); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+
+
+<style>
+.stage { height: auto; min-height: 0; padding: 0; overflow: hidden; }
+.stage canvas { display: block; width: 100%; }
+#bar { height: 230px; }
+#plot { height: 330px; border-top: 1px solid var(--line); }
+.stage .key { position: static; background: none; padding: 0; }
+.legendRow { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12.5px; color: var(--muted); padding: 8px 14px 12px; }
+.legendRow i { display: inline-block; width: 18px; height: 0; border-top: 2.5px solid; vertical-align: middle; margin-right: 6px; }
+.step p.note { font-family: var(--font-body); font-size: 12.5px; }
+.why { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+.why h2 { margin: 0 0 6px; font: 600 13.5px/1.2 var(--font-body); }
+.why ol { margin: 0; padding-left: 20px; display: grid; gap: 4px; max-width: 95ch; }
+.why p { margin: 8px 0 0; max-width: 95ch; color: var(--muted); font-size: 14px; }
+.topbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px 0; }
+.stage .readout { position: static; background: none; padding: 0; text-align: left; }
+.stage .runbar { position: static; }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:4px">
+    <div class="code">MTLE 4150</div>
+    <h1>Zone Refining</h1>
+  </header>
+  <p class="lede">Pfann's zone refining of a germanium ingot. Induction heaters melt narrow zones that travel along the bar. An impurity that dissolves better in the liquid than in the solid (distribution coefficient k = C<sub>solid</sub>/C<sub>liquid</sub> &lt; 1) is left behind in the moving zone, so each zone sweeps impurities toward the far end. Pass after pass, the starting end becomes ultra-pure.</p>
+
+  <div class="stage" id="stage">
+    <div class="topbar">
+      <div class="runbar">
+        <button class="btn primary small" id="run" type="button">Pause</button>
+        <button class="btn small" id="again" type="button">Pass through the heaters again</button>
+        <button class="btn small" id="restart" type="button">New ingot</button>
+      </div>
+      <div class="readout" id="readout"></div>
+    </div>
+    <canvas id="bar" aria-label="The ingot with impurity dots, molten zones and induction heaters"></canvas>
+    <canvas id="plot" aria-label="Impurity concentration along the ingot after each pass"></canvas>
+    <div class="legendRow" id="legend"></div>
+  </div>
+
+  <div class="steps">
+    <section class="step">
+      <h2><b>1</b>Impurity</h2>
+      <div class="field">
+        <label for="k"><span>Distribution coefficient k</span> <input type="number" id="kNum" min="0.01" max="0.95" step="0.01" value="0.1" aria-label="Distribution coefficient"></label>
+        <input type="range" id="k" min="0" max="100" step="1" value="50">
+      </div>
+      <p class="note">Smaller k: the impurity prefers the liquid more strongly and is swept away faster. Most impurities in germanium have k well below 1 (about 0.09 for gallium, 0.003 for antimony), which is what made zone-refined germanium so pure. Changes start a new ingot.</p>
+    </section>
+
+    <section class="step">
+      <h2><b>2</b>Zones</h2>
+      <div class="field">
+        <label for="zl"><span>Zone length, fraction of the ingot</span> <output id="zlOut">0.10</output></label>
+        <input type="range" id="zl" min="0.03" max="0.25" step="0.01" value="0.1">
+      </div>
+      <fieldset class="seg">
+        <legend>Heaters (zones passing at once)</legend>
+        <label><input type="radio" name="heaters" value="1"><span>1</span></label>
+        <label><input type="radio" name="heaters" value="2"><span>2</span></label>
+        <label><input type="radio" name="heaters" value="4" checked><span>4</span></label>
+      </fieldset>
+      <p class="note">Every heater the ingot passes through is one pass. A longer zone removes more on the first pass but less in the end: the ultimate purity is better with short zones.</p>
+    </section>
+
+    <section class="step">
+      <h2><b>3</b>Plot</h2>
+      <label class="check"><input type="checkbox" id="log" checked> Logarithmic concentration axis</label>
+      <label class="check"><input type="checkbox" id="pfann" checked> Pfann's one-pass formula</label>
+      <label class="check"><input type="checkbox" id="ult" checked> Ultimate distribution (many passes)</label>
+      <label class="check"><input type="checkbox" id="normal"> Normal freezing (melt the whole bar, freeze from one end)</label>
+    </section>
+
+    <section class="step">
+      <h2><b>4</b>Speed</h2>
+      <div class="field">
+        <label for="speed">Speed <output id="speedOut">medium</output></label>
+        <input type="range" id="speed" min="1" max="5" step="1" value="3">
+      </div>
+      <p class="note">The heaters are drawn moving along a fixed ingot. In practice the ingot is pulled through fixed heaters, so the zones and the impurities travel the opposite way to the ingot.</p>
+    </section>
+  </div>
+
+  <section class="why">
+    <h2>What to look for</h2>
+    <ol>
+      <li>The first solid to freeze behind a zone has only k times the zone's concentration, so the starting end comes out purer (C = kC<sub>0</sub> at the very start).</li>
+      <li>As the zone moves, it collects the rejected impurity, and the solid it leaves behind gets richer. After one pass, C<sub>s</sub>/C<sub>0</sub> = 1 − (1 − k) e<sup>−kx/l</sup>, with x the distance from the starting end and l the zone length.</li>
+      <li>The last zone length freezes like a normal casting and holds most of the impurity. Cut it off.</li>
+      <li>Repeated passes keep pushing impurity to the far end, but each pass also brings some back: the profile approaches a limit, C = A e<sup>Bx</sup> with k = Bl/(e<sup>Bl</sup> − 1). Compare with normal freezing of the whole bar, C<sub>s</sub> = kC<sub>0</sub>(1 − g)<sup>k−1</sup>, which purifies only once.</li>
+    </ol>
+    <p>Model: the liquid in each zone is fully mixed, there is no diffusion in the solid, and the bar is 800 cells long. The ultimate curve is Pfann's analytical approximation; it treats the whole bar as exponential and ignores the last zone, so the simulated bar ends up somewhat purer than the curve at the starting end.</p>
+  </section>
+</div>
+
+<script>
+// Zone refining (Pfann). A bar of N cells, solute concentration C (relative to the starting C0 = 1).
+// Each molten zone is l cells long, is fully mixed (liquid concentration CL), and moves one cell at a time from the
+// right end of the bar to the left: the cell at its trailing (right) edge freezes with Cs = k CL and the cell at its
+// leading (left) edge melts into it. No diffusion in the solid. When the zone reaches the left end it freezes
+// directionally (normal freezing of the last zone length). Several heaters can run at once, a fixed distance apart:
+// every heater that passes is one pass.
+function createZone(opt) {
+  opt = opt || {};
+  const N = opt.N || 500;
+  const sim = { N, C: new Float64Array(N).fill(1), k: opt.k != null ? opt.k : 0.2, l: Math.max(2, Math.round((opt.zone || 0.1) * N)),
+    heaters: opt.heaters || 4, zones: [], passes: 0, steps: 0, history: [] };
+  sim.spacing = Math.max(sim.l + 8, Math.round(N * 0.22));
+  let started = 0, clock = 0;
+  sim.pending = [];
+  sim.startSet = function () {
+    started = 0; clock = 0; sim.zones = []; sim.setDone = false;
+    // the profile after each pass of this set, worked out ahead on a copy (the zones never overlap, so running the
+    // passes one after another gives exactly what running them together gives); shown as each zone finishes
+    sim.pending = [];
+    if (opt.shadow) return;
+    const copy = createZone({ N, k: sim.k, zone: sim.l / N, heaters: 1, shadow: true });
+    copy.l = sim.l; copy.C.set(sim.C);
+    for (let p = 0; p < sim.heaters; p++) { copy.startSet(); while (copy.step()); sim.pending.push(Float64Array.from(copy.C)); }
+  };
+  function launch() {
+    const l = Math.min(sim.l, N), a = N - l, b = N - 1;
+    let M = 0; for (let x = a; x <= b; x++) M += sim.C[x];
+    sim.zones.push({ a, b, M, done: false });
+  }
+  // advance every zone by one cell; launch heaters at the right end one spacing apart
+  sim.step = function () {
+    if (sim.setDone) return false;
+    if (started < sim.heaters && clock === started * sim.spacing) { launch(); started++; }
+    clock++;
+    const k = sim.k, C = sim.C;
+    for (const z of sim.zones) {
+      if (z.done) continue;
+      const len = z.b - z.a + 1, CL = z.M / len;
+      if (z.a > 0) {                              // freeze the trailing cell, melt the next one ahead
+        C[z.b] = k * CL; z.M -= k * CL; z.b--;
+        z.a--; z.M += C[z.a];
+      } else if (len > 1) {                       // at the left end: the last zone freezes directionally
+        C[z.b] = k * CL; z.M -= k * CL; z.b--;
+      } else {                                    // last cell takes whatever is left
+        C[z.b] = z.M; z.done = true; sim.passes++;
+        if (sim.pending.length) sim.history.push(sim.pending.shift());
+      }
+    }
+    sim.steps++;
+    if (started === sim.heaters && sim.zones.every(z => z.done)) { sim.setDone = true; }
+    return true;
+  };
+  // concentration as seen by the plot: inside a zone, the liquid value
+  sim.liquidAt = function (x) { for (const z of sim.zones) if (!z.done && x >= z.a && x <= z.b) return z.M / (z.b - z.a + 1); return null; };
+  sim.total = function () { let s = 0; for (let x = 0; x < N; x++) { const L = sim.liquidAt(x); s += L != null ? 0 : sim.C[x]; } for (const z of sim.zones) if (!z.done) s += z.M; return s; };
+  sim.startSet();
+  return sim;
+}
+// Pfann's single-pass result, distance x from the starting end in units of the zone length: Cs/C0 = 1 - (1 - k) e^(-k x / l)
+function singlePass(k, xz) { return 1 - (1 - k) * Math.exp(-k * xz); }
+// Pfann's ultimate distribution after many passes (the textbook approximation): C/C0 = A e^(B x), x from the
+// starting end, with k = B l / (e^(Bl) - 1) and A = B L / (e^(BL) - 1). It treats the whole bar as exponential,
+// so it ignores the last zone length, where most of the solute ends up.
+function ultimate(k, l, L) {
+  let lo = 1e-12, hi = 60 / l;
+  for (let it = 0; it < 200; it++) { const B = 0.5 * (lo + hi), f = k * (Math.exp(B * l) - 1) - B * l; if (f > 0) hi = B; else lo = B; }
+  const B = 0.5 * (lo + hi);
+  return { A: B * L / Math.expm1(B * L), B };
+}
+if (typeof module !== "undefined") module.exports = { createZone, singlePass, ultimate };
+
+
+// ---------- page ----------
+const $ = id => document.getElementById(id);
+const NCELL = 800;
+const opt = { k: 0.1, zone: 0.1, heaters: 4 };
+let sim, running = true, speedLevel = 3, logY = true, showPfann = true, showUlt = true, showNormal = false;
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let C = {};
+function readColors() {
+  const cs = getComputedStyle(document.documentElement), g = n => cs.getPropertyValue(n).trim();
+  C = { scene: g("--scene"), fg: g("--fg"), muted: g("--muted"), line: g("--line"), accent: g("--accent"), panel: g("--panel"), dark: cs.colorScheme === "dark" };
+  C.rod = C.dark ? "#3a4656" : "#d9dee5"; C.rodEdge = C.dark ? "#6d7a8c" : "#8a95a3";
+  C.dot = C.dark ? "#e8edf2" : "#2a3340"; C.coil = C.dark ? "#c9a46a" : "#a36b2a";
+  C.cur = C.accent; C.hist = C.dark ? "#8796ab" : "#9aa5b3"; C.theory = C.dark ? "#7fb2ff" : "#2a6fb5"; C.ult = C.dark ? "#7fd39b" : "#2f8f5b"; C.norm = C.dark ? "#d3a6ff" : "#8a4fb0";
+}
+readColors();
+const redraw = () => { readColors(); draw(); };
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", redraw);
+new MutationObserver(redraw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+// impurity dots: fixed random positions, each with a threshold; a dot shows where C exceeds its threshold
+// (dot density proportional to concentration, up to 4 C0)
+let dots = [];
+function makeDots() {
+  dots = [];
+  for (let n = 0; n < 2600; n++) dots.push({ x: Math.random(), y: Math.random(), u: Math.random() * 4, r: 0.7 + Math.random() * 0.8 });
+}
+makeDots();
+
+function newSim() {
+  sim = createZone({ N: NCELL, k: opt.k, zone: opt.zone, heaters: opt.heaters });
+  draw();
+}
+
+// ---------- drawing ----------
+const bar = $("bar"), bctx = bar.getContext("2d"), plot = $("plot"), pctx = plot.getContext("2d");
+function fit(c) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2), w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  const ctx = c.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); return { w, h, ctx };
+}
+let geom = { L: 60, R: 20 };
+function concAt(x) { const L = sim.liquidAt(x); return L != null ? L : sim.C[x]; }
+function draw() {
+  if (!sim) return;
+  drawBar(); drawPlot(); readout();
+}
+function drawBar() {
+  const { w, h, ctx } = fit(bar);
+  ctx.fillStyle = C.scene; ctx.fillRect(0, 0, w, h);
+  const L = 56, R = 24, x0 = L, x1 = w - R, bw = x1 - x0, cy = h * 0.5, rh = Math.min(26, h * 0.13);
+  geom = { L, R };
+  const X = cell => x0 + (cell + 0.5) / sim.N * bw;
+  // coils behind the bar (back halves)
+  const live = sim.zones.filter(z => !z.done);
+  const coilAt = z => X((z.a + z.b) / 2);
+  const drawCoil = (cx, half, front) => {
+    ctx.strokeStyle = C.coil; ctx.lineWidth = 3.2;
+    for (let t = -1; t <= 1; t++) {
+      const ex = cx + t * 7, ry = rh * 2.1, rx = rh * 0.55;
+      ctx.beginPath(); ctx.ellipse(ex, cy, rx, ry, 0, front ? -Math.PI / 2 : Math.PI / 2, front ? Math.PI / 2 : 3 * Math.PI / 2); ctx.stroke();
+    }
+    if (!front) { ctx.beginPath(); ctx.moveTo(cx - 6, cy - rh * 2.1); ctx.lineTo(cx - 6, cy - rh * 3.1); ctx.moveTo(cx + 6, cy - rh * 2.1); ctx.lineTo(cx + 6, cy - rh * 3.1); ctx.stroke(); }
+  };
+  for (const z of live) drawCoil(coilAt(z), 0, false);
+  // the rod
+  ctx.fillStyle = C.rod; ctx.strokeStyle = C.rodEdge; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(x0, cy - rh); ctx.lineTo(x1, cy - rh); ctx.ellipse(x1, cy, rh * 0.35, rh, 0, -Math.PI / 2, Math.PI / 2); ctx.lineTo(x0, cy + rh);
+  ctx.ellipse(x0, cy, rh * 0.35, rh, 0, Math.PI / 2, 3 * Math.PI / 2); ctx.closePath(); ctx.fill(); ctx.stroke();
+  // molten zones: glowing
+  for (const z of live) {
+    const a = X(z.a) - bw / sim.N / 2, b = X(z.b) + bw / sim.N / 2;
+    const g = ctx.createLinearGradient(0, cy - rh, 0, cy + rh);
+    g.addColorStop(0, "#ffb347"); g.addColorStop(0.5, "#ff7a1a"); g.addColorStop(1, "#c4471c");
+    ctx.fillStyle = g; ctx.fillRect(a, cy - rh, b - a, 2 * rh);
+  }
+  // impurity dots
+  ctx.fillStyle = C.dot;
+  for (const d of dots) {
+    const cell = Math.min(sim.N - 1, Math.floor(d.x * sim.N));
+    if (concAt(cell) <= d.u) continue;
+    const px = x0 + d.x * bw, py = cy + (d.y * 2 - 1) * rh * 0.8;
+    ctx.beginPath(); ctx.arc(px, py, d.r, 0, 2 * Math.PI); ctx.fill();
+  }
+  for (const z of live) drawCoil(coilAt(z), 0, true);
+  // labels
+  ctx.fillStyle = C.muted; ctx.font = "12px IBM Plex Sans, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillText("impurities collect at this end", x0, cy + rh * 2.4);
+  ctx.textAlign = "right"; ctx.fillText("zones start here: ultra-pure end", x1, cy + rh * 2.4);
+  // arrow: zone travel
+  ctx.strokeStyle = C.muted; ctx.fillStyle = C.muted; ctx.lineWidth = 1.5;
+  const ay = cy - rh * 3.6, ax = (x0 + x1) / 2;
+  ctx.beginPath(); ctx.moveTo(ax + 60, ay); ctx.lineTo(ax - 60, ay); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ax - 66, ay); ctx.lineTo(ax - 56, ay - 5); ctx.lineTo(ax - 56, ay + 5); ctx.closePath(); ctx.fill();
+  ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText("molten zones and impurities travel this way", ax, ay - 4);
+}
+function drawPlot() {
+  const { w, h, ctx } = fit(plot);
+  ctx.fillStyle = C.scene; ctx.fillRect(0, 0, w, h);
+  const L = geom.L, R = geom.R, T = 16, B = 40, pw = w - L - R, ph = h - T - B;
+  const N = sim.N, k = sim.k, l = sim.l;
+  // y range
+  let ylo, yhi;
+  if (logY) {
+    let mn = 1; for (let x = 0; x < N; x++) if (sim.C[x] > 0) mn = Math.min(mn, sim.C[x]);
+    if (showUlt) { const u = ultimate(k, l, N); mn = Math.min(mn, u.A); }
+    ylo = Math.pow(10, Math.max(-14, Math.floor(Math.log10(Math.min(mn, k)) - 0.3))); yhi = Math.pow(10, Math.ceil(Math.log10(Math.max(10, 1 / k))));
+  } else { ylo = 0; yhi = Math.max(2, Math.ceil(Math.min(1 / k, 6) + 0.5)); }
+  const Y = v => logY ? T + ph - ph * (Math.log10(Math.max(v, ylo)) - Math.log10(ylo)) / (Math.log10(yhi) - Math.log10(ylo)) : T + ph - ph * (v - ylo) / (yhi - ylo);
+  const Xc = x => L + (x + 0.5) / N * pw;
+  // grid and axes
+  ctx.strokeStyle = C.line; ctx.lineWidth = 1; ctx.fillStyle = C.muted; ctx.font = "11px IBM Plex Mono, monospace";
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  if (logY) {
+    const e0 = Math.round(Math.log10(ylo)), e1 = Math.round(Math.log10(yhi)), stepE = Math.max(1, Math.ceil((e1 - e0) / 7));
+    for (let e = e0; e <= e1; e += stepE) { const y = Y(Math.pow(10, e)); ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(L + pw, y); ctx.stroke(); ctx.fillText(e === 0 ? "1" : `10^${e}`, L - 6, y); }
+  } else {
+    for (let v = 0; v <= yhi; v += yhi > 4 ? 1 : 0.5) { const y = Y(v); ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(L + pw, y); ctx.stroke(); ctx.fillText(v.toString(), L - 6, y); }
+  }
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (let q = 0; q <= 4; q++) ctx.fillText((q / 4).toFixed(2), L + pw * q / 4, T + ph + 6);
+  ctx.fillText("position along the ingot (zones start at the right end)", L + pw / 2, T + ph + 22);
+  ctx.save(); ctx.translate(13, T + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = "middle"; ctx.fillText("C / C₀", 0, 0); ctx.restore();
+  // C0 reference
+  ctx.setLineDash([3, 3]); ctx.strokeStyle = C.muted; ctx.beginPath(); ctx.moveTo(L, Y(1)); ctx.lineTo(L + pw, Y(1)); ctx.stroke(); ctx.setLineDash([]);
+  ctx.save(); ctx.beginPath(); ctx.rect(L, T, pw, ph); ctx.clip();
+  const curve = (f, col, lw, dash) => {
+    ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.setLineDash(dash || []); ctx.beginPath(); let pen = false;
+    for (let x = 0; x < N; x++) { const v = f(x); if (v == null || !isFinite(v) || (logY && v < ylo)) { pen = false; continue; } const px = Xc(x), py = Y(v); pen ? ctx.lineTo(px, py) : ctx.moveTo(px, py); pen = true; }
+    ctx.stroke(); ctx.setLineDash([]);
+  };
+  // normal freezing of the whole bar from the right end: g = fraction frozen
+  if (showNormal) curve(x => { const g = (N - 1 - x + 0.5) / N; return g < 0.999 ? k * Math.pow(1 - g, k - 1) : null; }, C.norm, 1.8, [2, 3]);
+  if (showUlt) { const u = ultimate(k, l, N); curve(x => { const d = N - 1 - x + 0.5; return d < N - l ? u.A * Math.exp(u.B * d) : null; }, C.ult, 1.8, [7, 4]); }
+  if (showPfann) curve(x => { const d = N - 1 - x + 0.5; return d < N - l ? singlePass(k, d / l) : null; }, C.theory, 1.8, [5, 4]);
+  // earlier passes, faded
+  const H = sim.history;
+  for (let n = 0; n < H.length; n++) { const hh = H[n]; ctx.globalAlpha = 0.35 + 0.5 * (n + 1) / H.length; curve(x => hh[x], C.hist, 1.2); }
+  ctx.globalAlpha = 1;
+  // current profile (inside a zone: its liquid concentration)
+  curve(x => concAt(x), C.cur, 2.4);
+  ctx.restore();
+  // legend
+  const items = [[C.cur, "now"], [C.hist, "after each pass"]];
+  if (showPfann) items.push([C.theory, "Pfann, one pass", "dashed"]);
+  if (showUlt) items.push([C.ult, "ultimate distribution", "dashed"]);
+  if (showNormal) items.push([C.norm, "normal freezing", "dotted"]);
+  $("legend").innerHTML = items.map(([c, t, d]) => `<span><i style="border-top-color:${c};border-top-style:${d || "solid"}"></i>${t}</span>`).join("");
+}
+function readout() {
+  const N = sim.N, end = sim.C[N - 1];
+  let pure = 0; for (let x = 0; x < N; x++) if (sim.C[x] < 0.01 && !sim.liquidAt(x)) pure++;
+  const going = sim.zones.filter(z => !z.done).length;
+  $("readout").innerHTML = `passes completed ${sim.passes}` + (going ? `, ${going} under way` : "") + `<br>pure end C/C₀ = ${end.toExponential(1).replace("e", "×10^")}<br>${(100 * pure / N).toFixed(0)}% of the ingot below C₀/100`;
+}
+
+// ---------- loop ----------
+const SPEEDS = [1, 2, 4, 8, 20], SPEEDNAME = ["very slow", "slow", "medium", "fast", "very fast"];
+let lastTick = 0;
+function tick() {
+  const now = performance.now();
+  if (running && sim && !sim.setDone) {
+    try { const n = Math.max(1, Math.round(SPEEDS[speedLevel - 1] * (reduceMotion ? 0.5 : 1))); for (let i = 0; i < n; i++) sim.step(); } catch (e) { console.error(e); }
+    try { draw(); } catch (e) { console.error(e); }
+  }
+  lastTick = now;
+}
+function frame() { tick(); requestAnimationFrame(frame); }
+setInterval(() => { if (performance.now() - lastTick > 80) tick(); }, 50);
+
+// ---------- controls ----------
+// k slider: logarithmic from 0.01 to 0.95
+const kFromSlider = v => Math.round(Math.pow(10, -2 + v / 100 * Math.log10(95)) * 1000) / 1000;
+const sliderFromK = k => Math.round((Math.log10(k) + 2) / Math.log10(95) * 100);
+function setK(k) {
+  k = Math.min(0.95, Math.max(0.01, +k)); if (!isFinite(k)) return;
+  opt.k = k; $("k").value = sliderFromK(k); if (document.activeElement !== $("kNum")) $("kNum").value = k;
+  newSim();
+}
+$("k").value = sliderFromK(opt.k);
+$("k").addEventListener("input", e => { const k = kFromSlider(+e.target.value); $("kNum").value = k; setK(k); });
+$("kNum").addEventListener("change", e => setK(e.target.value));
+$("zl").addEventListener("input", e => { opt.zone = +e.target.value; $("zlOut").textContent = opt.zone.toFixed(2); newSim(); });
+document.querySelectorAll('input[name="heaters"]').forEach(r => r.addEventListener("change", () => { opt.heaters = +r.value; newSim(); }));
+$("log").addEventListener("change", e => { logY = e.target.checked; draw(); });
+$("pfann").addEventListener("change", e => { showPfann = e.target.checked; draw(); });
+$("ult").addEventListener("change", e => { showUlt = e.target.checked; draw(); });
+$("normal").addEventListener("change", e => { showNormal = e.target.checked; draw(); });
+$("speed").addEventListener("input", e => { speedLevel = +e.target.value; $("speedOut").textContent = SPEEDNAME[speedLevel - 1]; });
+$("run").addEventListener("click", () => { running = !running; $("run").textContent = running ? "Pause" : "Run"; });
+$("again").addEventListener("click", () => { if (sim.setDone) { sim.startSet(); running = true; $("run").textContent = "Pause"; } });
+$("restart").addEventListener("click", () => newSim());
+new ResizeObserver(() => draw()).observe(document.body);
+
+newSim();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
